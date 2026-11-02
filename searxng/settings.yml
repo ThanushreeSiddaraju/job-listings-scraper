@@ -1,0 +1,14 @@
+# Start from SearXNG's defaults and change only what the job finder needs.
+use_default_settings: true
+
+server:
+  # Only reachable from this machine (see docker-compose.yml), so the bot limiter isn't needed.
+  limiter: false
+  # Change this to any long random string.
+  secret_key: "change-me-to-a-long-random-string"
+
+search:
+  # The job finder reads results as JSON; SearXNG only serves HTML by default.
+  formats:
+    - html
+    - json
