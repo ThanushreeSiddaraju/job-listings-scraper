@@ -1,0 +1,170 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Listings Scraper</title>
+  <style>
+    :root {
+      --bg: #f7f7f5; --surface: #ffffff; --text: #1c1c1a; --muted: #6b6b66;
+      --border: #e3e3de; --accent: #2f5bd3; --accent-text: #ffffff; --error: #b42318;
+      --row-hover: #f1f3fa;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413; --surface: #1e1e1c; --text: #ececea; --muted: #9b9b95;
+        --border: #33332f; --accent: #7c9cf5; --accent-text: #0e1220; --error: #f97066;
+        --row-hover: #262a36;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 1100px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 24px; }
+    .sub a { color: inherit; }
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 20px; }
+    button, .btn { font: inherit; padding: 8px 16px; border-radius: 8px; cursor: pointer;
+                   border: 1px solid var(--border); background: var(--surface); color: var(--text);
+                   text-decoration: none; }
+    button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+    button:disabled { opacity: .6; cursor: default; }
+    .btn[aria-disabled="true"] { opacity: .5; pointer-events: none; }
+    #status { color: var(--muted); font-size: 14px; }
+    #status.error { color: var(--error); }
+    .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+    .stat { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px 16px; }
+    .stat .label { color: var(--muted); font-size: 13px; }
+    .stat .value { font-size: 24px; font-weight: 600; font-variant-numeric: tabular-nums; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
+    .filters input, .filters select { font: inherit; padding: 8px 10px; border-radius: 8px;
+                   border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+    .filters input { flex: 1 1 240px; }
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+    th { font-size: 13px; color: var(--muted); font-weight: 600; cursor: pointer; user-select: none; }
+    th[aria-sort="ascending"]::after { content: " ▲"; }
+    th[aria-sort="descending"]::after { content: " ▼"; }
+    tbody tr:hover { background: var(--row-hover); }
+    td a { color: var(--accent); }
+    .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+    .missing { color: var(--muted); font-style: italic; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Job Listings Scraper <small style="font-weight:400;font-size:14px"><a href="/" style="color:var(--accent)">← Job finder</a></small></h1>
+  <p class="sub">Scrapes title, company, location, date and job link from
+    <a href="{{ source_url }}" target="_blank" rel="noopener">{{ source_url }}</a>.</p>
+
+  <div class="toolbar">
+    <button class="primary" id="run">Run scraper</button>
+    <a class="btn" id="download" href="/practice/download" aria-disabled="true">Download CSV</a>
+    <span id="status" role="status">No data yet. Click “Run scraper”.</span>
+  </div>
+
+  <div class="stats">
+    <div class="stat"><div class="label">Jobs scraped</div><div class="value" id="s-jobs">–</div></div>
+    <div class="stat"><div class="label">Companies</div><div class="value" id="s-companies">–</div></div>
+    <div class="stat"><div class="label">Locations</div><div class="value" id="s-locations">–</div></div>
+    <div class="stat"><div class="label">Missing values</div><div class="value" id="s-missing">–</div></div>
+  </div>
+
+  <div class="filters">
+    <input id="q" type="search" placeholder="Search title or company…" aria-label="Search title or company">
+    <select id="state" aria-label="Filter by state"><option value="">All states</option></select>
+  </div>
+
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th data-key="title">Title</th>
+        <th data-key="company">Company</th>
+        <th data-key="location">Location</th>
+        <th data-key="date_posted">Posted</th>
+        <th>Link</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="5" class="empty">Nothing scraped yet.</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const FIELDS = ["title", "company", "location", "date_posted", "url"];
+  let jobs = [];
+  let sort = { key: null, dir: 1 };
+
+  const $ = (id) => document.getElementById(id);
+  const stateOf = (loc) => (loc || "").split(",").pop().trim();
+
+  function esc(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  }
+  const cell = (v) => v ? esc(v) : '<span class="missing">missing</span>';
+
+  function render() {
+    const q = $("q").value.trim().toLowerCase();
+    const st = $("state").value;
+    let rows = jobs.filter((j) =>
+      (!q || (j.title || "").toLowerCase().includes(q) || (j.company || "").toLowerCase().includes(q)) &&
+      (!st || stateOf(j.location) === st));
+    if (sort.key) {
+      rows = [...rows].sort((a, b) => (a[sort.key] || "").localeCompare(b[sort.key] || "") * sort.dir);
+    }
+    $("rows").innerHTML = rows.length ? rows.map((j) => `
+      <tr>
+        <td>${cell(j.title)}</td>
+        <td>${cell(j.company)}</td>
+        <td>${cell(j.location)}</td>
+        <td>${cell(j.date_posted)}</td>
+        <td>${j.url ? `<a href="${esc(j.url)}" target="_blank" rel="noopener">Open</a>` : cell(null)}</td>
+      </tr>`).join("")
+      : `<tr><td colspan="5" class="empty">${jobs.length ? "No jobs match these filters." : "Nothing scraped yet."}</td></tr>`;
+    if (jobs.length) $("status").textContent = `Showing ${rows.length} of ${jobs.length} jobs.`;
+  }
+
+  function loadStats() {
+    $("s-jobs").textContent = jobs.length;
+    $("s-companies").textContent = new Set(jobs.map((j) => j.company).filter(Boolean)).size;
+    $("s-locations").textContent = new Set(jobs.map((j) => j.location).filter(Boolean)).size;
+    $("s-missing").textContent = jobs.reduce((n, j) => n + FIELDS.filter((f) => !j[f]).length, 0);
+    const states = [...new Set(jobs.map((j) => stateOf(j.location)).filter(Boolean))].sort();
+    $("state").innerHTML = '<option value="">All states</option>' +
+      states.map((s) => `<option>${esc(s)}</option>`).join("");
+  }
+
+  $("run").addEventListener("click", async () => {
+    const btn = $("run"), status = $("status");
+    btn.disabled = true;
+    status.className = "";
+    status.textContent = "Scraping…";
+    try {
+      const res = await fetch("/api/practice/scrape", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      jobs = data.jobs;
+      loadStats();
+      render();
+      status.textContent = `Scraped ${jobs.length} jobs in ${data.seconds}s and saved jobs.csv.`;
+      $("download").setAttribute("aria-disabled", "false");
+    } catch (err) {
+      status.className = "error";
+      status.textContent = `Scrape failed: ${err.message}`;
+    } finally {
+      btn.disabled = false;
+    }
+  });
+
+  $("q").addEventListener("input", render);
+  $("state").addEventListener("change", render);
+  document.querySelectorAll("th[data-key]").forEach((th) => th.addEventListener("click", () => {
+    sort = { key: th.dataset.key, dir: sort.key === th.dataset.key ? -sort.dir : 1 };
+    document.querySelectorAll("th[data-key]").forEach((h) => h.removeAttribute("aria-sort"));
+    th.setAttribute("aria-sort", sort.dir === 1 ? "ascending" : "descending");
+    render();
+  }));
+</script>
+</body>
+</html>

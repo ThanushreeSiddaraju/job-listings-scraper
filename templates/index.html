@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Finder</title>
+  <style>
+    :root {
+      --bg: #f7f7f5; --surface: #ffffff; --text: #1c1c1a; --muted: #6b6b66;
+      --border: #e3e3de; --accent: #2f5bd3; --accent-text: #ffffff; --error: #b42318;
+      --ok: #1f7a4d; --row-hover: #f1f3fa; --chip: #eef0f4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413; --surface: #1e1e1c; --text: #ececea; --muted: #9b9b95;
+        --border: #33332f; --accent: #7c9cf5; --accent-text: #0e1220; --error: #f97066;
+        --ok: #4ec58a; --row-hover: #262a36; --chip: #2a2a27;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 1160px; margin: 0 auto; padding: 32px 16px 64px; }
+    header { display: flex; justify-content: space-between; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    header a { color: var(--muted); font-size: 14px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+
+    form { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    input[type=text], input[type=search], select {
+      font: inherit; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); min-width: 0; }
+    #q { flex: 2 1 260px; } #location { flex: 1 1 180px; } #country { flex: 0 1 160px; }
+    button, .btn { font: inherit; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+                   border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+    button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+    button:disabled { opacity: .6; cursor: default; }
+    .options { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 14px; color: var(--muted); align-items: center; }
+    .options label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; color: var(--text); }
+    .options label.off { color: var(--muted); cursor: not-allowed; }
+    .options .group { color: var(--muted); font-weight: 600; margin-right: 2px; }
+
+    #status { color: var(--muted); font-size: 14px; min-height: 21px; margin: 4px 0 10px; }
+    #status.error { color: var(--error); }
+    .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+    .chip { background: var(--chip); border-radius: 999px; padding: 3px 10px; font-size: 13px; }
+    .chip.ok b { color: var(--ok); } .chip.err { color: var(--error); }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; }
+    #filter { flex: 1 1 240px; }
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    td.title { min-width: 240px; font-weight: 500; } td.nowrap, th { white-space: nowrap; }
+    td.loc { min-width: 160px; max-width: 280px; color: var(--muted); }
+    th { font-size: 13px; color: var(--muted); font-weight: 600; cursor: pointer; user-select: none; }
+    th[aria-sort="ascending"]::after { content: " ▲"; } th[aria-sort="descending"]::after { content: " ▼"; }
+    tbody tr:hover { background: var(--row-hover); }
+    td a { color: var(--accent); font-weight: 600; }
+    .tag { font-size: 12px; background: var(--chip); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+    .remote { font-size: 12px; color: var(--ok); margin-left: 6px; }
+    .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Job Finder</h1>
+    <a href="/practice">Practice scraper (roadmap.sh) →</a>
+  </header>
+  <p class="sub">Searches job boards, company career pages and the web at once, then removes duplicates.</p>
+
+  <form id="search-form">
+    <div class="row">
+      <input id="q" type="search" placeholder="Job title or keyword, e.g. data analyst" aria-label="Job title or keyword" required>
+      <input id="location" type="text" placeholder="City (optional)" aria-label="City">
+      <select id="country" aria-label="Country for Indeed and Glassdoor">
+        <option value="india">India</option><option value="usa">USA</option><option value="uk">UK</option>
+        <option value="canada">Canada</option><option value="australia">Australia</option>
+        <option value="germany">Germany</option><option value="singapore">Singapore</option>
+        <option value="united arab emirates">UAE</option>
+      </select>
+      <button class="primary" id="go" type="submit">Search</button>
+    </div>
+    <div class="options">
+      <label><input type="checkbox" id="remote"> Remote only</label>
+      <label title="Job boards also return loosely related jobs; this keeps only titles that contain every keyword">
+        <input type="checkbox" id="exact" checked> Exact title match</label>
+    </div>
+    <div class="options" id="sources"><span class="group">Sources</span></div>
+  </form>
+
+  <div id="status" role="status"></div>
+  <div class="chips" id="chips"></div>
+
+  <div class="toolbar">
+    <input id="filter" type="search" placeholder="Filter these results…" aria-label="Filter results">
+    <select id="source-filter" aria-label="Filter by source"><option value="">All sources</option></select>
+    <button id="csv" type="button" disabled>Download CSV</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th data-key="title">Title</th><th data-key="company">Company</th><th data-key="location">Location</th>
+        <th data-key="date_posted">Posted</th><th data-key="source">Source</th><th>Apply</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="6" class="empty">Search for a role to see jobs here.</td></tr></tbody>
+    </table>
+  </div>
+</main>
+
+<script>
+  const $ = (id) => document.getElementById(id);
+  let jobs = [];
+  let sort = { key: "date_posted", dir: -1 };
+
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+
+  async function loadSources() {
+    const { sources } = await (await fetch("/api/sources")).json();
+    const saved = (store.get("sources") || "").split(",").filter(Boolean);
+    $("sources").insertAdjacentHTML("beforeend", sources.map((s) => {
+      const checked = s.enabled && (saved.length ? saved.includes(s.key) : s.default);
+      const hint = s.enabled ? "" : ' title="Not configured: set SEARXNG_URL (see README)"';
+      return `<label class="${s.enabled ? "" : "off"}"${hint}>
+        <input type="checkbox" name="source" value="${s.key}" ${checked ? "checked" : ""} ${s.enabled ? "" : "disabled"}>
+        ${esc(s.label)}${s.enabled ? "" : " (off)"}</label>`;
+    }).join(""));
+  }
+
+  function render() {
+    const q = $("filter").value.trim().toLowerCase();
+    const src = $("source-filter").value;
+    let rows = jobs.filter((j) => (!src || j.source === src) &&
+      (!q || [j.title, j.company, j.location].some((v) => (v || "").toLowerCase().includes(q))));
+    rows = [...rows].sort((a, b) => (a[sort.key] || "").localeCompare(b[sort.key] || "") * sort.dir);
+    document.querySelectorAll("th[data-key]").forEach((th) =>
+      th.dataset.key === sort.key ? th.setAttribute("aria-sort", sort.dir === 1 ? "ascending" : "descending")
+                                  : th.removeAttribute("aria-sort"));
+    $("rows").innerHTML = rows.length ? rows.map((j) => `
+      <tr>
+        <td class="title">${esc(j.title)}${j.remote ? '<span class="remote">Remote</span>' : ""}</td>
+        <td>${esc(j.company || "—")}</td>
+        <td class="loc">${esc(j.location || "—")}</td>
+        <td class="nowrap">${esc(j.date_posted || "—")}</td>
+        <td><span class="tag">${esc(j.source)}</span></td>
+        <td><a href="${esc(j.url)}" target="_blank" rel="noopener">Apply ↗</a></td>
+      </tr>`).join("")
+      : `<tr><td colspan="6" class="empty">${jobs.length ? "No jobs match this filter." : "No jobs found. Try a broader keyword or turn off exact title match."}</td></tr>`;
+  }
+
+  $("search-form").addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const sources = [...document.querySelectorAll('input[name=source]:checked')].map((i) => i.value);
+    store.set("sources", sources.join(",")); store.set("country", $("country").value);
+    const params = new URLSearchParams({
+      q: $("q").value.trim(), location: $("location").value.trim(), country: $("country").value,
+      remote: $("remote").checked ? "1" : "0", exact: $("exact").checked ? "1" : "0", sources: sources.join(","),
+    });
+    $("go").disabled = true; $("status").className = ""; $("chips").innerHTML = "";
+    $("status").textContent = `Searching ${sources.length} sources… job boards can take up to a minute.`;
+    try {
+      const res = await fetch(`/api/search?${params}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      jobs = data.jobs;
+      $("chips").innerHTML = data.sources.map((s) => s.error
+        ? `<span class="chip err" title="${esc(s.error)}">${esc(s.label)}: ${esc(s.error)}</span>`
+        : `<span class="chip ok" title="${esc(s.warnings.join("\n"))}">${esc(s.label)}: <b>${s.count}</b> · ${s.seconds}s${s.warnings.length ? ` · ${s.warnings.length} skipped` : ""}</span>`).join("");
+      $("status").textContent = `${jobs.length} jobs in ${data.seconds}s` +
+        (data.duplicates_removed ? ` (${data.duplicates_removed} duplicates removed)` : "") + ".";
+      const names = [...new Set(jobs.map((j) => j.source))].sort();
+      $("source-filter").innerHTML = '<option value="">All sources</option>' + names.map((n) => `<option>${esc(n)}</option>`).join("");
+      $("csv").disabled = !jobs.length;
+      render();
+    } catch (err) {
+      $("status").className = "error"; $("status").textContent = `Search failed: ${err.message}`;
+    } finally {
+      $("go").disabled = false;
+    }
+  });
+
+  $("csv").addEventListener("click", () => {
+    const cols = ["title", "company", "location", "date_posted", "source", "remote", "url"];
+    const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [cols.join(","), ...jobs.map((j) => cols.map((c) => cell(j[c])).join(","))].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `jobs-${$("q").value.trim().replace(/\W+/g, "-") || "search"}.csv`;
+    a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  $("filter").addEventListener("input", render);
+  $("source-filter").addEventListener("change", render);
+  document.querySelectorAll("th[data-key]").forEach((th) => th.addEventListener("click", () => {
+    sort = { key: th.dataset.key, dir: sort.key === th.dataset.key ? -sort.dir : 1 };
+    render();
+  }));
+
+  const savedCountry = store.get("country");
+  if (savedCountry) $("country").value = savedCountry;
+  loadSources();
+</script>
+</body>
+</html>
