@@ -20,6 +20,9 @@ SITES = {
     "zip_recruiter": "ZipRecruiter",
 }
 
+# Country values from the UI (JobSpy's Indeed names) -> place names the other boards understand.
+COUNTRY_NAMES = {"usa": "United States", "uk": "United Kingdom", "united arab emirates": "United Arab Emirates"}
+
 
 def _clean(value):
     if value is None or (isinstance(value, float) and math.isnan(value)):
@@ -46,7 +49,9 @@ def _friendly(message: str) -> str:
 
 
 def search(site: str, params: SearchParams) -> list[Job]:
-    where = f" in {params.location}" if params.location else ""
+    # Without a city, search the selected country (otherwise LinkedIn/Google return jobs worldwide).
+    location = params.location or COUNTRY_NAMES.get(params.country, params.country.title())
+    where = f" in {location}"
     logger = logging.getLogger(f"jobspy.{site}")
     collector = _ErrorCollector()
     logger.addHandler(collector)
@@ -55,7 +60,7 @@ def search(site: str, params: SearchParams) -> list[Job]:
             site_name=[site],
             search_term=params.query,
             google_search_term=f"{params.query} jobs{where} since last week",
-            location=params.location or None,
+            location=location,
             is_remote=params.remote_only,
             results_wanted=params.limit_per_source,
             country_indeed=params.country,
