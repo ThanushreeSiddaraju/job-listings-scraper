@@ -180,7 +180,10 @@
       $("csv").disabled = !jobs.length;
       render();
     } catch (err) {
-      $("status").className = "error"; $("status").textContent = `Search failed: ${err.message}`;
+      $("status").className = "error";
+      $("status").textContent = err instanceof TypeError
+        ? "Search failed: can't reach the job finder server. Is “python app.py” still running?"
+        : `Search failed: ${err.message}`;
     } finally {
       $("go").disabled = false;
     }
@@ -203,9 +206,17 @@
     render();
   }));
 
+  function showServerError() {
+    $("status").className = "error";
+    $("status").textContent = location.protocol === "file:"
+      ? "This page was opened as a file. Run “python app.py” and open http://127.0.0.1:5050 instead."
+      : "Can't reach the job finder server. Is “python app.py” still running?";
+    $("go").disabled = true;
+  }
+
   const savedCountry = store.get("country");
   if (savedCountry) $("country").value = savedCountry;
-  loadSources();
+  loadSources().catch(showServerError);
 </script>
 </body>
 </html>
