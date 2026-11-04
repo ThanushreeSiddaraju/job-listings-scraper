@@ -60,6 +60,14 @@
     td a { color: var(--accent); font-weight: 600; }
     .tag { font-size: 12px; background: var(--chip); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
     .remote { font-size: 12px; color: var(--ok); margin-left: 6px; }
+    .new { font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent);
+           border-radius: 4px; padding: 1px 6px; margin-right: 6px; vertical-align: 1px; }
+    .score { font-variant-numeric: tabular-nums; color: var(--muted); }
+    .hide { border: 0; background: none; color: var(--muted); padding: 0 0 0 6px; font-size: 12px; cursor: pointer; }
+    .hide:hover { color: var(--error); text-decoration: underline; }
+    #blocked { font-size: 13px; color: var(--muted); margin: -6px 0 12px; }
+    #blocked button { font-size: 12px; padding: 1px 8px; border-radius: 999px; margin: 2px 4px 2px 0; }
+    .toolbar label { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
     .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
   </style>
 </head>
@@ -87,25 +95,33 @@
       <label><input type="checkbox" id="remote"> Remote only</label>
       <label title="Job boards also return loosely related jobs; this keeps only titles that contain every keyword">
         <input type="checkbox" id="exact" checked> Exact title match</label>
+      <label>Posted within
+        <select id="days" aria-label="Posted within">
+          <option value="">any time</option><option value="1">24 hours</option><option value="3">3 days</option>
+          <option value="7">7 days</option><option value="30">30 days</option>
+        </select></label>
     </div>
     <div class="options" id="sources"><span class="group">Sources</span></div>
   </form>
 
   <div id="status" role="status"></div>
   <div class="chips" id="chips"></div>
+  <div id="blocked"></div>
 
   <div class="toolbar">
     <input id="filter" type="search" placeholder="Filter these results…" aria-label="Filter results">
     <select id="source-filter" aria-label="Filter by source"><option value="">All sources</option></select>
+    <label title="Jobs you haven't seen in any earlier search"><input type="checkbox" id="only-new"> Only new</label>
     <button id="csv" type="button" disabled>Download CSV</button>
   </div>
   <div class="table-wrap">
     <table>
       <thead><tr>
+        <th data-key="score" title="How closely the title matches your search, plus a bonus for recent posts">Match</th>
         <th data-key="title">Title</th><th data-key="company">Company</th><th data-key="location">Location</th>
         <th data-key="date_posted">Posted</th><th data-key="source">Source</th><th>Apply</th>
       </tr></thead>
-      <tbody id="rows"><tr><td colspan="6" class="empty">Search for a role to see jobs here.</td></tr></tbody>
+      <tbody id="rows"><tr><td colspan="7" class="empty">Search for a role to see jobs here.</td></tr></tbody>
     </table>
   </div>
 </main>
@@ -113,7 +129,7 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let jobs = [];
-  let sort = { key: "date_posted", dir: -1 };
+  let sort = { key: "score", dir: -1 };
 
   const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -137,23 +153,52 @@
   function render() {
     const q = $("filter").value.trim().toLowerCase();
     const src = $("source-filter").value;
-    let rows = jobs.filter((j) => (!src || j.source === src) &&
+    const onlyNew = $("only-new").checked;
+    let rows = jobs.filter((j) => (!src || j.source === src) && (!onlyNew || j.is_new) &&
       (!q || [j.title, j.company, j.location].some((v) => (v || "").toLowerCase().includes(q))));
-    rows = [...rows].sort((a, b) => (a[sort.key] || "").localeCompare(b[sort.key] || "") * sort.dir);
+    const cmp = (a, b) => typeof a === "number" ? a - b : String(a || "").localeCompare(String(b || ""));
+    rows = [...rows].sort((a, b) => cmp(a[sort.key], b[sort.key]) * sort.dir);
     document.querySelectorAll("th[data-key]").forEach((th) =>
       th.dataset.key === sort.key ? th.setAttribute("aria-sort", sort.dir === 1 ? "ascending" : "descending")
                                   : th.removeAttribute("aria-sort"));
     $("rows").innerHTML = rows.length ? rows.map((j) => `
       <tr>
-        <td class="title">${esc(j.title)}${j.remote ? '<span class="remote">Remote</span>' : ""}</td>
-        <td>${esc(j.company || "—")}</td>
+        <td class="score">${j.score}</td>
+        <td class="title">${j.is_new ? '<span class="new">NEW</span>' : ""}${esc(j.title)}${j.remote ? '<span class="remote">Remote</span>' : ""}</td>
+        <td>${esc(j.company || "—")}${j.company ? `<button class="hide" data-company="${esc(j.company)}" title="Hide all jobs from this company">Hide</button>` : ""}</td>
         <td class="loc">${esc(j.location || "—")}</td>
         <td class="nowrap">${esc(j.date_posted || "—")}</td>
         <td><span class="tag">${esc(j.source)}</span></td>
         <td><a href="${esc(j.url)}" target="_blank" rel="noopener">Apply ↗</a></td>
       </tr>`).join("")
-      : `<tr><td colspan="6" class="empty">${jobs.length ? "No jobs match this filter." : "No jobs found. Try a broader keyword or turn off exact title match."}</td></tr>`;
+      : `<tr><td colspan="7" class="empty">${jobs.length ? "No jobs match this filter." : "No jobs found. Try a broader keyword, an older “posted within”, or turn off exact title match."}</td></tr>`;
   }
+
+  function renderBlocked(companies) {
+    $("blocked").innerHTML = companies.length
+      ? "Hidden companies: " + companies.map((c) =>
+          `<button type="button" data-unhide="${esc(c)}" title="Show this company again">${esc(c)} ✕</button>`).join("")
+      : "";
+  }
+
+  async function setBlocked(company, hide) {
+    const res = await fetch("/api/blocked", {
+      method: hide ? "POST" : "DELETE", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ company }),
+    });
+    renderBlocked((await res.json()).companies);
+  }
+
+  $("rows").addEventListener("click", async (e) => {
+    const company = e.target.closest("button.hide")?.dataset.company;
+    if (!company) return;
+    await setBlocked(company, true);
+    jobs = jobs.filter((j) => j.company !== company);
+    render();
+  });
+  $("blocked").addEventListener("click", (e) => {
+    const company = e.target.closest("button[data-unhide]")?.dataset.unhide;
+    if (company) setBlocked(company, false);  // shows up again from the next search
+  });
 
   $("search-form").addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -162,6 +207,7 @@
     const params = new URLSearchParams({
       q: $("q").value.trim(), location: $("location").value.trim(), country: $("country").value,
       remote: $("remote").checked ? "1" : "0", exact: $("exact").checked ? "1" : "0", sources: sources.join(","),
+      days: $("days").value,
     });
     $("go").disabled = true; $("status").className = ""; $("chips").innerHTML = "";
     $("status").textContent = `Searching ${sources.length} sources… job boards can take up to a minute.`;
@@ -173,8 +219,14 @@
       $("chips").innerHTML = data.sources.map((s) => s.error
         ? `<span class="chip err" title="${esc(s.error)}">${esc(s.label)}: ${esc(s.error)}</span>`
         : `<span class="chip ok" title="${esc(s.warnings.join("\n"))}">${esc(s.label)}: <b>${s.count}</b> · ${s.seconds}s${s.warnings.length ? ` · ${s.warnings.length} skipped` : ""}</span>`).join("");
-      $("status").textContent = `${jobs.length} jobs in ${data.seconds}s` +
-        (data.duplicates_removed ? ` (${data.duplicates_removed} duplicates removed)` : "") + ".";
+      const notes = [
+        data.duplicates_removed && `${data.duplicates_removed} duplicates removed`,
+        data.too_old && `${data.too_old} older posts skipped`,
+        data.hidden_companies && `${data.hidden_companies} from hidden companies`,
+      ].filter(Boolean);
+      const fresh = jobs.filter((j) => j.is_new).length;
+      $("status").textContent = `${jobs.length} jobs (${fresh} new) in ${data.seconds}s` +
+        (notes.length ? ` · ${notes.join(" · ")}` : "") + ".";
       const names = [...new Set(jobs.map((j) => j.source))].sort();
       $("source-filter").innerHTML = '<option value="">All sources</option>' + names.map((n) => `<option>${esc(n)}</option>`).join("");
       $("csv").disabled = !jobs.length;
@@ -190,7 +242,7 @@
   });
 
   $("csv").addEventListener("click", () => {
-    const cols = ["title", "company", "location", "date_posted", "source", "remote", "url"];
+    const cols = ["score", "title", "company", "location", "date_posted", "source", "remote", "is_new", "url"];
     const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const csv = [cols.join(","), ...jobs.map((j) => cols.map((c) => cell(j[c])).join(","))].join("\n");
     const a = document.createElement("a");
@@ -200,6 +252,7 @@
   });
 
   $("filter").addEventListener("input", render);
+  $("only-new").addEventListener("change", render);
   $("source-filter").addEventListener("change", render);
   document.querySelectorAll("th[data-key]").forEach((th) => th.addEventListener("click", () => {
     sort = { key: th.dataset.key, dir: sort.key === th.dataset.key ? -sort.dir : 1 };
@@ -217,6 +270,7 @@
   const savedCountry = store.get("country");
   if (savedCountry) $("country").value = savedCountry;
   loadSources().catch(showServerError);
+  fetch("/api/blocked").then((r) => r.json()).then((d) => renderBlocked(d.companies)).catch(() => {});
 </script>
 </body>
 </html>

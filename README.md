@@ -35,6 +35,18 @@ python app.py                  # then open http://127.0.0.1:5050
 Search by keyword, optionally a city and country, then filter, sort and download the results as CSV.
 **Exact title match** (on by default) keeps only titles containing every keyword, since job boards also return loosely related roles.
 
+- **Match score:** results are ranked by how closely the title matches your search (exact phrase, no extra words) plus a bonus for recent posts.
+- **Posted within:** skip jobs older than 24 hours / 3 / 7 / 30 days. Jobs without a date are kept.
+- **NEW badge / Only new:** jobs you haven't seen in any earlier search, so repeat searches show what's changed.
+- **Hide company:** hides a company (e.g. a staffing agency) from all future searches; un-hide it from the list above the results.
+- **Duplicates:** the same job on two sites is shown once, even when the title is written differently ("Sr. Python Dev" / "Senior Python Developer") or one site only gives a state. Separate openings on one company board, and different levels ("Engineer II" / "III"), are never merged.
+
+### Caching
+
+Company boards are cached in `data/jobfinder.db` (SQLite, not committed), so they survive restarts. Within 10 minutes the saved copy is used
+directly; after that it is revalidated with the board's ETag, and an unchanged board costs an empty `304 Not Modified` reply instead of a
+full download (OpenAI's board alone is ~13 MB). If a revalidation stalls or fails, the saved copy is used.
+
 ### Adding companies
 
 Find the company's careers page. If it is hosted on `boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>` or

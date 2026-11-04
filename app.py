@@ -9,6 +9,7 @@ import time
 import requests
 from flask import Flask, jsonify, render_template, request, send_file
 
+from jobfinder import store
 from jobfinder.models import SearchParams
 from jobfinder.search import DEFAULT_SOURCES, SOURCES, available_sources, search
 from scraper import BASE_URL, fetch_html, parse_jobs, save_csv
@@ -46,11 +47,32 @@ def job_search():
         country=request.args.get("country", "india"),
         remote_only=request.args.get("remote") == "1",
         exact_title=request.args.get("exact", "1") == "1",
+        max_age_days=int(request.args["days"]) if request.args.get("days", "").isdigit() else None,
     )
     started = time.perf_counter()
     result = search(params, keys)
     result["seconds"] = round(time.perf_counter() - started, 1)
     return jsonify(result)
+
+
+@app.get("/api/blocked")
+def blocked_list():
+    return jsonify(companies=store.blocked_companies())
+
+
+@app.post("/api/blocked")
+def block():
+    name = (request.get_json(silent=True) or {}).get("company", "").strip()
+    if not name:
+        return jsonify(error="Missing company name."), 400
+    store.block_company(name)
+    return jsonify(companies=store.blocked_companies())
+
+
+@app.delete("/api/blocked")
+def unblock():
+    store.unblock_company((request.get_json(silent=True) or {}).get("company", ""))
+    return jsonify(companies=store.blocked_companies())
 
 
 @app.get("/practice")
