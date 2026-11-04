@@ -6,3 +6,4 @@ __pycache__/
 jobs.csv
 jobs-*.csv
 .env
+data/
