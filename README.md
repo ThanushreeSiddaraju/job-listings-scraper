@@ -3,6 +3,10 @@
 Type a role ("python developer", "data analyst") and get matching job links from many sources at once,
 with duplicates removed and direct company links preferred.
 
+**Live version: https://thanushreesiddaraju.github.io/job-listings-scraper/**: searches company career pages
+(Greenhouse, Lever, Ashby) directly from your browser. Those APIs allow requests from any website, so no server is needed;
+the page lives in [`docs/`](docs). Job boards (Indeed, LinkedIn, Naukri, …) block browser requests and need the full app below.
+
 It started as the [roadmap.sh Job Listings Scraper project](https://roadmap.sh/projects/job-listings-scraper),
 which is still included as a practice scraper (see [Practice scraper](#practice-scraper-roadmapsh)).
 
@@ -11,7 +15,7 @@ which is still included as a practice scraper (see [Practice scraper](#practice-
 | Source | How | Notes |
 |---|---|---|
 | Indeed, LinkedIn, Google Jobs, Naukri, Glassdoor, ZipRecruiter | [JobSpy](https://github.com/speedyapply/JobSpy) | Scrapes the boards. LinkedIn rate-limits after a few searches; blocked sites are reported, not worked around. Indeed/Glassdoor search one country at a time. |
-| Company career pages | Public Greenhouse, Lever and Ashby APIs | No key needed. Companies are listed in [`jobfinder/companies.json`](jobfinder/companies.json); add your own. |
+| Company career pages | Public Greenhouse, Lever and Ashby APIs | No key needed. Companies are listed in [`docs/companies.json`](docs/companies.json) (shared with the live site); add your own. |
 | Web search | Self-hosted [SearXNG](https://github.com/searxng/searxng) | Queries Google, Bing, DuckDuckGo, Brave and more. Finds new companies on Greenhouse/Lever/Ashby and reads `JobPosting` data from other job pages (respecting robots.txt). Optional; off until `SEARXNG_URL` is set. |
 
 Every source runs in parallel and is optional: if one fails, the others still return results and the UI shows what went wrong.
@@ -50,7 +54,7 @@ full download (OpenAI's board alone is ~13 MB). If a revalidation stalls or fail
 ### Adding companies
 
 Find the company's careers page. If it is hosted on `boards.greenhouse.io/<slug>`, `jobs.lever.co/<slug>` or
-`jobs.ashbyhq.com/<slug>`, add an entry to `jobfinder/companies.json`:
+`jobs.ashbyhq.com/<slug>`, add an entry to `docs/companies.json`:
 
 ```json
 {"name": "Stripe", "ats": "greenhouse", "slug": "stripe"}
