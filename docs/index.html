@@ -1,0 +1,416 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Job Finder</title>
+  <meta name="description" content="Search live job openings straight from company career pages (Greenhouse, Lever, Ashby).">
+  <style>
+    :root {
+      --bg: #f7f7f5; --surface: #ffffff; --text: #1c1c1a; --muted: #6b6b66;
+      --border: #e3e3de; --accent: #2f5bd3; --accent-text: #ffffff; --error: #b42318;
+      --ok: #1f7a4d; --row-hover: #f1f3fa; --chip: #eef0f4;
+    }
+    @media (prefers-color-scheme: dark) {
+      :root {
+        --bg: #141413; --surface: #1e1e1c; --text: #ececea; --muted: #9b9b95;
+        --border: #33332f; --accent: #7c9cf5; --accent-text: #0e1220; --error: #f97066;
+        --ok: #4ec58a; --row-hover: #262a36; --chip: #2a2a27;
+      }
+    }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--text);
+           font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+    main { max-width: 1160px; margin: 0 auto; padding: 32px 16px 64px; }
+    h1 { font-size: 24px; margin: 0 0 4px; }
+    .sub { color: var(--muted); margin: 0 0 20px; }
+    .sub a, footer a, details a { color: var(--accent); }
+
+    form, details { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+    .row { display: flex; flex-wrap: wrap; gap: 8px; }
+    input[type=text], input[type=search], input[type=url], select {
+      font: inherit; padding: 9px 12px; border-radius: 8px; border: 1px solid var(--border);
+      background: var(--bg); color: var(--text); min-width: 0; }
+    #q { flex: 2 1 260px; } #location { flex: 1 1 200px; } #board-url { flex: 1 1 320px; }
+    button { font: inherit; padding: 9px 18px; border-radius: 8px; cursor: pointer;
+             border: 1px solid var(--border); background: var(--surface); color: var(--text); }
+    button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); font-weight: 600; }
+    button:disabled { opacity: .6; cursor: default; }
+    .options { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 14px; align-items: center; }
+    .options label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    summary { cursor: pointer; font-weight: 600; }
+    details p { color: var(--muted); font-size: 14px; margin: 10px 0; }
+    .companies { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
+    .companies span { background: var(--chip); border-radius: 999px; padding: 2px 10px; font-size: 13px; }
+    .companies button { border: 0; background: none; padding: 0 0 0 4px; color: var(--muted); font-size: 13px; }
+    #add-status { font-size: 13px; color: var(--muted); margin-top: 6px; min-height: 20px; }
+    #add-status.error { color: var(--error); }
+
+    #status { color: var(--muted); font-size: 14px; min-height: 21px; margin: 4px 0 6px; }
+    #status.error { color: var(--error); }
+    #failed { font-size: 13px; color: var(--error); margin-bottom: 8px; }
+    #blocked { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
+    #blocked button { font-size: 12px; padding: 1px 8px; border-radius: 999px; margin: 2px 4px 2px 0; }
+
+    .toolbar { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; }
+    .toolbar label { display: inline-flex; gap: 6px; align-items: center; font-size: 14px; }
+    #filter { flex: 1 1 240px; }
+    .table-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--border); vertical-align: top; }
+    td.title { min-width: 240px; font-weight: 500; } td.nowrap, th { white-space: nowrap; }
+    td.loc { min-width: 160px; max-width: 300px; color: var(--muted); }
+    th { font-size: 13px; color: var(--muted); font-weight: 600; cursor: pointer; user-select: none; }
+    th[aria-sort="ascending"]::after { content: " ▲"; } th[aria-sort="descending"]::after { content: " ▼"; }
+    tbody tr:hover { background: var(--row-hover); }
+    td a { color: var(--accent); font-weight: 600; }
+    .score { font-variant-numeric: tabular-nums; color: var(--muted); }
+    .tag { font-size: 12px; background: var(--chip); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
+    .remote { font-size: 12px; color: var(--ok); margin-left: 6px; }
+    .new { font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent);
+           border-radius: 4px; padding: 1px 6px; margin-right: 6px; vertical-align: 1px; }
+    .hide { border: 0; background: none; color: var(--muted); padding: 0 0 0 6px; font-size: 12px; }
+    .hide:hover { color: var(--error); text-decoration: underline; }
+    .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
+    footer { color: var(--muted); font-size: 13px; margin-top: 24px; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>Job Finder</h1>
+  <p class="sub">Live job openings straight from company career pages (Greenhouse, Lever and Ashby), searched in your browser.
+    Job boards like Indeed, LinkedIn and Naukri need the <a href="https://github.com/ThanushreeSiddaraju/job-listings-scraper#run">full app</a>.</p>
+
+  <form id="search-form">
+    <div class="row">
+      <input id="q" type="search" placeholder="Job title or keyword, e.g. software engineer" aria-label="Job title or keyword" required>
+      <input id="location" type="text" placeholder="City or country (optional), e.g. Bengaluru" aria-label="City or country">
+      <button class="primary" id="go" type="submit">Search</button>
+    </div>
+    <div class="options">
+      <label><input type="checkbox" id="remote"> Remote only</label>
+      <label>Posted within
+        <select id="days" aria-label="Posted within">
+          <option value="">any time</option><option value="1">24 hours</option><option value="3">3 days</option>
+          <option value="7">7 days</option><option value="30">30 days</option>
+        </select></label>
+    </div>
+  </form>
+
+  <details id="company-panel">
+    <summary>Companies searched (<span id="company-count">…</span>)</summary>
+    <div class="companies" id="companies"></div>
+    <p>Add a company whose careers page is hosted on Greenhouse, Lever or Ashby. Open its careers page, click any job,
+      and paste the link, e.g. <code>https://jobs.lever.co/acme/…</code>. Added companies are saved in this browser only.</p>
+    <div class="row">
+      <input id="board-url" type="url" placeholder="https://boards.greenhouse.io/company" aria-label="Careers page link">
+      <button id="add-company" type="button">Add company</button>
+    </div>
+    <div id="add-status" role="status"></div>
+  </details>
+
+  <div id="status" role="status"></div>
+  <div id="failed"></div>
+  <div id="blocked"></div>
+
+  <div class="toolbar">
+    <input id="filter" type="search" placeholder="Filter these results…" aria-label="Filter results">
+    <select id="company-filter" aria-label="Filter by company"><option value="">All companies</option></select>
+    <label title="Jobs you haven't seen in an earlier search in this browser"><input type="checkbox" id="only-new"> Only new</label>
+    <button id="csv" type="button" disabled>Download CSV</button>
+  </div>
+  <div class="table-wrap">
+    <table>
+      <thead><tr>
+        <th data-key="score" title="How closely the title matches your search, plus a bonus for recent posts">Match</th>
+        <th data-key="title">Title</th><th data-key="company">Company</th><th data-key="location">Location</th>
+        <th data-key="date_posted">Posted</th><th data-key="source">Source</th><th>Apply</th>
+      </tr></thead>
+      <tbody id="rows"><tr><td colspan="7" class="empty">Search for a role to see jobs here.</td></tr></tbody>
+    </table>
+  </div>
+
+  <footer>Built from the <a href="https://roadmap.sh/projects/job-listings-scraper">roadmap.sh Job Listings Scraper</a> project ·
+    <a href="https://github.com/ThanushreeSiddaraju/job-listings-scraper">Source on GitHub</a></footer>
+</main>
+
+<script>
+  // ---------- storage (per browser; may be unavailable in private windows) ----------
+  const store = {
+    get(key, fallback) { try { return JSON.parse(localStorage.getItem(key)) ?? fallback; } catch { return fallback; } },
+    set(key, value) { try { localStorage.setItem(key, JSON.stringify(value)); } catch {} },
+  };
+
+  // ---------- matching (same rules as jobfinder/matching.py) ----------
+  const STOP_WORDS = new Set(["job", "jobs", "role", "roles", "position", "positions", "for", "in", "a", "an", "the", "and", "of"]);
+  const ABBREVIATIONS = {
+    sr: "senior", snr: "senior", jr: "junior", jnr: "junior", eng: "engineer", engg: "engineer", engr: "engineer",
+    dev: "developer", mgr: "manager", mgmt: "management", assoc: "associate", asst: "assistant",
+    admin: "administrator", exec: "executive", intl: "international", ml: "machine learning",
+  };
+  const LOCATION_ALIASES = { bengaluru: "bangalore", bangalore: "bengaluru", gurugram: "gurgaon", gurgaon: "gurugram",
+    mumbai: "bombay", chennai: "madras", nyc: "new york", sf: "san francisco" };
+
+  function terms(text) {
+    const words = (String(text).toLowerCase().match(/[a-z0-9+#.]+/g) || []).map((w) => w.replace(/^\.+|\.+$/g, "")).filter(Boolean);
+    return words.map((w) => ABBREVIATIONS[w] || w).join(" ").split(" ").filter((w) => w && !STOP_WORDS.has(w));
+  }
+  function titleMatches(title, query) {
+    const wanted = terms(query), have = new Set(terms(title));
+    return wanted.length > 0 && wanted.every((w) => have.has(w));
+  }
+  function locationMatches(location, wanted, remote) {
+    if (!wanted) return true;
+    if (!location) return Boolean(remote);
+    const loc = location.toLowerCase(), w = wanted.toLowerCase().trim();
+    return [w, LOCATION_ALIASES[w]].filter(Boolean).some((c) => loc.includes(c));
+  }
+  function relevance(title, query, ageDays) {
+    const wanted = terms(query), have = terms(title);
+    if (!wanted.length || !have.length) return 0;
+    const match = have.join(" ").includes(wanted.join(" ")) ? 50 : Math.round(40 * wanted.filter((w) => have.includes(w)).length / wanted.length);
+    const focus = Math.round(20 * Math.min(1, wanted.length / have.length));
+    const recency = ageDays == null ? 0 : Math.round(30 * Math.max(0, 1 - ageDays / 60));
+    return match + focus + recency;
+  }
+
+  // ---------- company career-page APIs (they allow requests from any website) ----------
+  const isoDate = (v) => v == null ? null : typeof v === "number" ? new Date(v).toISOString().slice(0, 10) : String(v).slice(0, 10);
+  const titleCase = (s) => s.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+
+  const FETCHERS = {
+    async greenhouse(slug, name) {
+      const data = await getJSON(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`);
+      return (data.jobs || []).map((j) => {
+        const loc = j.location?.name || null;
+        return { title: j.title.trim(), company: j.company_name || name || titleCase(slug), location: loc, url: j.absolute_url,
+                 source: "Greenhouse", date_posted: isoDate(j.first_published || j.updated_at), remote: /remote/i.test(loc || "") };
+      });
+    },
+    async lever(slug, name) {
+      const data = await getJSON(`https://api.lever.co/v0/postings/${slug}?mode=json`);
+      return data.map((j) => ({ title: j.text.trim(), company: name || titleCase(slug), location: j.categories?.location || null,
+        url: j.hostedUrl, source: "Lever", date_posted: isoDate(j.createdAt), remote: j.workplaceType === "remote" }));
+    },
+    async ashby(slug, name) {
+      const data = await getJSON(`https://api.ashbyhq.com/posting-api/job-board/${slug}`);
+      return (data.jobs || []).filter((j) => j.isListed !== false).map((j) => ({
+        title: j.title.trim(), company: name || titleCase(slug),
+        location: [j.location, ...(j.secondaryLocations || []).map((s) => s.location)].filter(Boolean).join("; ") || null,
+        url: j.jobUrl, source: "Ashby", date_posted: isoDate(j.publishedAt), remote: Boolean(j.isRemote) }));
+    },
+  };
+
+  async function getJSON(url) {
+    // The browser's HTTP cache revalidates with ETags, so unchanged boards aren't downloaded again.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const res = await fetch(url, { signal: controller.signal });
+      if (!res.ok) throw new Error(res.status === 404 ? "board not found" : `HTTP ${res.status}`);
+      return await res.json();
+    } catch (err) {
+      throw new Error(err.name === "AbortError" ? "timed out" : err.message);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  const boardCache = new Map();  // within this page visit, each board is fetched once
+  function loadBoard(board) {
+    const key = `${board.ats}:${board.slug}`;
+    if (!boardCache.has(key)) {
+      const promise = FETCHERS[board.ats](board.slug, board.name);
+      promise.catch(() => boardCache.delete(key));  // retry failed boards on the next search
+      boardCache.set(key, promise);
+    }
+    return boardCache.get(key);
+  }
+
+  async function mapLimit(items, limit, fn) {
+    const results = new Array(items.length);
+    let next = 0;
+    const worker = async () => {
+      while (next < items.length) {
+        const i = next++;
+        try { results[i] = { ok: true, value: await fn(items[i]) }; }
+        catch (error) { results[i] = { ok: false, error }; }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
+    return results;
+  }
+
+  // ---------- companies ----------
+  const ATS_HOSTS = { "boards.greenhouse.io": "greenhouse", "job-boards.greenhouse.io": "greenhouse",
+    "jobs.lever.co": "lever", "jobs.ashbyhq.com": "ashby" };
+  let builtIn = [];
+  let extra = store.get("extraCompanies", []);
+  const allCompanies = () => [...builtIn, ...extra];
+
+  function boardFromUrl(text) {
+    let url;
+    try { url = new URL(text.trim()); } catch { return null; }
+    const ats = ATS_HOSTS[url.hostname.toLowerCase()];
+    const slug = url.pathname.split("/").filter(Boolean)[0];
+    return ats && slug && slug !== "embed" ? { ats, slug: slug.toLowerCase() } : null;
+  }
+
+  function renderCompanies() {
+    $("company-count").textContent = allCompanies().length;
+    $("companies").innerHTML = builtIn.map((c) => `<span>${esc(c.name)}</span>`).join("") +
+      extra.map((c) => `<span>${esc(c.name)}<button type="button" data-remove="${esc(c.ats + ":" + c.slug)}" title="Remove">✕</button></span>`).join("");
+  }
+
+  // ---------- page ----------
+  function $(id) { return document.getElementById(id); }
+  const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  let jobs = [];
+  let sort = { key: "score", dir: -1 };
+
+  function render() {
+    const q = $("filter").value.trim().toLowerCase();
+    const company = $("company-filter").value;
+    const onlyNew = $("only-new").checked;
+    let rows = jobs.filter((j) => (!company || j.company === company) && (!onlyNew || j.is_new) &&
+      (!q || [j.title, j.company, j.location].some((v) => (v || "").toLowerCase().includes(q))));
+    const cmp = (a, b) => typeof a === "number" ? a - b : String(a || "").localeCompare(String(b || ""));
+    rows.sort((a, b) => cmp(a[sort.key], b[sort.key]) * sort.dir || cmp(b.date_posted, a.date_posted));
+    document.querySelectorAll("th[data-key]").forEach((th) =>
+      th.dataset.key === sort.key ? th.setAttribute("aria-sort", sort.dir === 1 ? "ascending" : "descending") : th.removeAttribute("aria-sort"));
+    $("rows").innerHTML = rows.length ? rows.map((j) => `
+      <tr>
+        <td class="score">${j.score}</td>
+        <td class="title">${j.is_new ? '<span class="new">NEW</span>' : ""}${esc(j.title)}${j.remote ? '<span class="remote">Remote</span>' : ""}</td>
+        <td>${esc(j.company)}<button class="hide" data-company="${esc(j.company)}" title="Hide all jobs from this company">Hide</button></td>
+        <td class="loc">${esc(j.location || "—")}</td>
+        <td class="nowrap">${esc(j.date_posted || "—")}</td>
+        <td><span class="tag">${esc(j.source)}</span></td>
+        <td><a href="${esc(j.url)}" target="_blank" rel="noopener">Apply ↗</a></td>
+      </tr>`).join("")
+      : `<tr><td colspan="7" class="empty">${jobs.length ? "No jobs match this filter." :
+          "No jobs found. Try a broader keyword, a different place, or “any time”."}</td></tr>`;
+  }
+
+  function renderBlocked() {
+    const hidden = store.get("hiddenCompanies", []);
+    $("blocked").innerHTML = hidden.length ? "Hidden companies: " + hidden.map((c) =>
+      `<button type="button" data-unhide="${esc(c)}" title="Show this company again">${esc(c)} ✕</button>`).join("") : "";
+  }
+
+  async function search(e) {
+    e.preventDefault();
+    const query = $("q").value.trim(), place = $("location").value.trim();
+    const remoteOnly = $("remote").checked, days = $("days").value ? Number($("days").value) : null;
+    const companies = allCompanies();
+    $("go").disabled = true; $("status").className = ""; $("failed").textContent = "";
+    $("status").textContent = `Searching ${companies.length} company career pages…`;
+    const started = performance.now();
+
+    const results = await mapLimit(companies, 6, loadBoard);
+    const failed = companies.filter((_, i) => !results[i].ok).map((c, i) => c.name);
+    const hidden = new Set(store.get("hiddenCompanies", []));
+    const today = new Date();
+    const seen = new Set(store.get("seenJobs", []));
+    const found = new Map();
+    let tooOld = 0;
+    results.forEach((r) => {
+      if (!r.ok) return;
+      for (const job of r.value) {
+        if (!titleMatches(job.title, query) || !locationMatches(job.location, place, job.remote) || (remoteOnly && !job.remote)) continue;
+        if (hidden.has(job.company) || found.has(job.url)) continue;
+        const age = job.date_posted ? Math.floor((today - new Date(job.date_posted)) / 86400000) : null;
+        if (days != null && age != null && age > days) { tooOld++; continue; }
+        found.set(job.url, { ...job, score: relevance(job.title, query, age), is_new: !seen.has(job.url) });
+      }
+    });
+    jobs = [...found.values()];
+    // Remember what was shown, so the next search can flag only new jobs (capped to keep storage small).
+    store.set("seenJobs", [...new Set([...jobs.map((j) => j.url), ...seen])].slice(0, 20000));
+
+    const secs = ((performance.now() - started) / 1000).toFixed(1);
+    const fresh = jobs.filter((j) => j.is_new).length;
+    $("status").textContent = `${jobs.length} jobs (${fresh} new) from ${companies.length - failed.length} companies in ${secs}s` +
+      (tooOld ? ` · ${tooOld} older posts skipped` : "") + ".";
+    $("failed").textContent = failed.length ? `Couldn't load: ${failed.join(", ")}.` : "";
+    const names = [...new Set(jobs.map((j) => j.company))].sort((a, b) => a.localeCompare(b));
+    $("company-filter").innerHTML = '<option value="">All companies</option>' + names.map((n) => `<option>${esc(n)}</option>`).join("");
+    $("csv").disabled = !jobs.length;
+    $("go").disabled = false;
+    render();
+  }
+
+  $("search-form").addEventListener("submit", (e) => search(e).catch((err) => {
+    $("status").className = "error"; $("status").textContent = `Search failed: ${err.message}`; $("go").disabled = false;
+  }));
+  $("filter").addEventListener("input", render);
+  $("company-filter").addEventListener("change", render);
+  $("only-new").addEventListener("change", render);
+  document.querySelectorAll("th[data-key]").forEach((th) => th.addEventListener("click", () => {
+    sort = { key: th.dataset.key, dir: sort.key === th.dataset.key ? -sort.dir : 1 };
+    render();
+  }));
+
+  $("rows").addEventListener("click", (e) => {
+    const company = e.target.closest("button.hide")?.dataset.company;
+    if (!company) return;
+    store.set("hiddenCompanies", [...new Set([...store.get("hiddenCompanies", []), company])]);
+    jobs = jobs.filter((j) => j.company !== company);
+    renderBlocked(); render();
+  });
+  $("blocked").addEventListener("click", (e) => {
+    const company = e.target.closest("button[data-unhide]")?.dataset.unhide;
+    if (!company) return;
+    store.set("hiddenCompanies", store.get("hiddenCompanies", []).filter((c) => c !== company));
+    renderBlocked();  // the company's jobs come back from the next search
+  });
+
+  $("add-company").addEventListener("click", async () => {
+    const status = $("add-status");
+    const board = boardFromUrl($("board-url").value);
+    status.className = "";
+    if (!board) {
+      status.className = "error";
+      status.textContent = "That isn't a Greenhouse, Lever or Ashby link (boards.greenhouse.io, jobs.lever.co or jobs.ashbyhq.com).";
+      return;
+    }
+    if (allCompanies().some((c) => c.ats === board.ats && c.slug === board.slug)) {
+      status.textContent = "That company is already in the list."; return;
+    }
+    status.textContent = "Checking the board…";
+    try {
+      const list = await FETCHERS[board.ats](board.slug, null);
+      const name = list[0]?.company || titleCase(board.slug);
+      extra = [...extra, { ...board, name }];
+      store.set("extraCompanies", extra);
+      renderCompanies();
+      $("board-url").value = "";
+      status.textContent = `Added ${name} (${list.length} open jobs right now).`;
+    } catch (err) {
+      status.className = "error"; status.textContent = `Couldn't load that board: ${err.message}.`;
+    }
+  });
+  $("companies").addEventListener("click", (e) => {
+    const key = e.target.closest("button[data-remove]")?.dataset.remove;
+    if (!key) return;
+    extra = extra.filter((c) => `${c.ats}:${c.slug}` !== key);
+    store.set("extraCompanies", extra);
+    renderCompanies();
+  });
+
+  $("csv").addEventListener("click", () => {
+    const cols = ["score", "title", "company", "location", "date_posted", "source", "remote", "is_new", "url"];
+    const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
+    const csv = [cols.join(","), ...jobs.map((j) => cols.map((c) => cell(j[c])).join(","))].join("\n");
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([csv], { type: "text/csv" }));
+    a.download = `jobs-${$("q").value.trim().replace(/\W+/g, "-") || "search"}.csv`;
+    a.click(); URL.revokeObjectURL(a.href);
+  });
+
+  fetch("companies.json").then((r) => r.json()).then((list) => { builtIn = list; renderCompanies(); })
+    .catch(() => { $("status").className = "error"; $("status").textContent = "Couldn't load the company list (companies.json)."; });
+  renderBlocked();
+</script>
+</body>
+</html>

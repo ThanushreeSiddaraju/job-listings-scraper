@@ -14,7 +14,8 @@ from ..http import get_json
 from ..matching import location_matches, title_matches
 from ..models import Job, SearchParams
 
-WATCHLIST_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "companies.json")
+# Shared with the GitHub Pages site (docs/), which reads the same list.
+WATCHLIST_PATH = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "docs", "companies.json")
 
 
 def _iso(value) -> str | None:
