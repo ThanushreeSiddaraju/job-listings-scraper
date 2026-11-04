@@ -67,6 +67,9 @@ def search(site: str, params: SearchParams) -> list[Job]:
             hours_old=24 * 30,
             verbose=0,
         )
+    except (ValueError, KeyError, IndexError, AttributeError) as exc:
+        # JobSpy parses the sites' pages; when a site changes its layout this surfaces as a parsing error.
+        raise RuntimeError(f"couldn't read {SITES.get(site, site)}'s results (the site may have changed)") from exc
     finally:
         logger.removeHandler(collector)
     # "no job data returned" just means zero results; anything else (blocked, HTTP errors) is a failure.

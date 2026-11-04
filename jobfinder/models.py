@@ -22,4 +22,5 @@ class SearchParams:
     country: str = "india"  # used by Indeed/Glassdoor, which search one country at a time
     remote_only: bool = False
     exact_title: bool = True  # job boards return loosely related jobs; keep only titles containing every keyword
+    max_age_days: int | None = None  # drop jobs posted longer ago than this (undated jobs are kept)
     limit_per_source: int = 25

@@ -1,12 +1,27 @@
+import os
+import tempfile
 import unittest
-from datetime import date
+from datetime import date, timedelta
 from unittest import mock
 
+from jobfinder import http, store
 from jobfinder import search as search_module
 from jobfinder.jobpage import extract_jobs
-from jobfinder.matching import location_matches, title_matches
+from jobfinder.matching import location_matches, normalize_company, normalize_title, relevance, title_matches
 from jobfinder.models import Job, SearchParams
 from jobfinder.sources import ats, websearch
+
+
+def setUpModule():
+    # Keep tests away from the real data/jobfinder.db.
+    global _tmp
+    _tmp = tempfile.TemporaryDirectory()
+    store.DB_PATH = os.path.join(_tmp.name, "test.db")
+    store._ready = False
+
+
+def tearDownModule():
+    _tmp.cleanup()
 
 JOB_PAGE = """
 <html><head>
@@ -52,6 +67,22 @@ class MatchingTest(unittest.TestCase):
         self.assertTrue(title_matches("Analyst, Data Platform", "data analyst jobs"))
         self.assertFalse(title_matches("Business Analyst", "data analyst"))
         self.assertTrue(title_matches("C++ Developer", "c++ developer"))
+
+    def test_normalizing(self):
+        self.assertEqual(normalize_title("Sr. Software Engg - Python"), "senior software engineer python")
+        self.assertEqual(normalize_company("Infosys Pvt. Ltd."), "infosys")
+        self.assertEqual(normalize_company("Amazon.com"), "amazon")
+        self.assertTrue(title_matches("Sr. Python Dev", "senior python developer"))
+
+    def test_relevance_prefers_exact_focused_recent_titles(self):
+        exact = relevance("Data Analyst", "data analyst", age_days=1)
+        wordy = relevance("Data Analyst & Ops Lead, APAC", "data analyst", age_days=1)
+        old = relevance("Data Analyst", "data analyst", age_days=90)
+        partial = relevance("Analyst, Data Platform", "data analyst", age_days=1)
+        self.assertGreater(exact, wordy)
+        self.assertGreater(exact, old)
+        self.assertGreater(wordy, partial - 1)
+        self.assertEqual(relevance("", "data analyst", None), 0)
 
     def test_location_aliases_and_remote(self):
         self.assertTrue(location_matches("Bangalore, KA", "Bengaluru"))
@@ -112,12 +143,99 @@ class WebSearchTest(unittest.TestCase):
                 websearch.search(SearchParams(query="x"), [])
 
 
+class StoreTest(unittest.TestCase):
+    def test_mark_seen_reports_only_first_sighting(self):
+        self.assertEqual(store.mark_seen(["https://x/1", "https://x/2"]), {"https://x/1", "https://x/2"})
+        self.assertEqual(store.mark_seen(["https://x/2", "https://x/3"]), {"https://x/3"})
+
+    def test_block_list(self):
+        store.block_company("Acme Corp")
+        self.assertIn("Acme Corp", store.blocked_companies())
+        store.unblock_company("Acme Corp")
+        self.assertNotIn("Acme Corp", store.blocked_companies())
+
+
+class HttpCacheTest(unittest.TestCase):
+    def test_revalidates_with_etag_and_reuses_body_on_304(self):
+        first = mock.Mock(status_code=200, headers={"ETag": 'W/"v1"'}, content=b'{"jobs": [1]}')
+        first.json.return_value = {"jobs": [1]}
+        not_modified = mock.Mock(status_code=304, headers={}, content=b"")
+        url = "https://boards.example/etag-test"
+        with mock.patch.object(http._session, "get", side_effect=[first, not_modified]) as get:
+            self.assertEqual(http.get_json(url), {"jobs": [1]})
+            http._cache.clear()
+            with mock.patch.object(http, "CACHE_SECONDS", 0):  # force a revalidation
+                self.assertEqual(http.get_json(url), {"jobs": [1]})
+        self.assertEqual(get.call_args_list[1].kwargs["headers"], {"If-None-Match": 'W/"v1"'})
+
+    def test_serves_saved_copy_when_revalidation_fails(self):
+        first = mock.Mock(status_code=200, headers={"ETag": '"v1"'}, content=b'{"ok": true}')
+        first.json.return_value = {"ok": True}
+        url = "https://boards.example/stale"
+        with mock.patch.object(http._session, "get", side_effect=[first, http.requests.Timeout("stalled")]):
+            http.get_json(url)
+            http._cache.clear()
+            with mock.patch.object(http, "CACHE_SECONDS", 0):
+                self.assertEqual(http.get_json(url), {"ok": True})
+        with mock.patch.object(http._session, "get", side_effect=http.requests.Timeout("stalled")):
+            with self.assertRaises(http.requests.Timeout):  # nothing saved yet: the error is reported
+                http.get_json("https://boards.example/never-fetched")
+
+    def test_fresh_cache_skips_the_network(self):
+        response = mock.Mock(status_code=200, headers={}, content=b"[]")
+        response.json.return_value = []
+        with mock.patch.object(http._session, "get", return_value=response) as get:
+            http.get_json("https://boards.example/fresh")
+            http.get_json("https://boards.example/fresh")
+        self.assertEqual(get.call_count, 1)
+
+
 class SearchTest(unittest.TestCase):
     def test_dedupe_keeps_first(self):
         a = Job("Data Analyst", "Stripe", "Bengaluru, India", "https://stripe.com/jobs/1", "Greenhouse")
         b = Job("Data Analyst", "Stripe", "Bengaluru, KA", "https://in.indeed.com/viewjob?jk=1", "Indeed")
         c = Job("Data Analyst", "Other", "Bengaluru", "https://stripe.com/jobs/1/", "LinkedIn")
         self.assertEqual(search_module.dedupe([a, b, c]), [a])
+
+    def test_dedupe_catches_near_identical_titles(self):
+        a = Job("Senior Python Developer", "Infosys", "Bengaluru, Karnataka, India", "https://a/1", "LinkedIn")
+        b = Job("Sr. Python Developer", "Infosys Limited", "KA, India", "https://b/1", "Indeed")  # no city given
+        c = Job("Sr Python Developer", "Infosys", "Bangalore", "https://c/1", "Naukri")  # alias of Bengaluru
+        d = Job("Senior Python Developer", "Infosys", "Pune, MH, India", "https://d/1", "Naukri")  # other city
+        e = Job("Python Developer Intern", "Infosys", "Bengaluru", "https://e/1", "Naukri")  # different role
+        self.assertEqual(search_module.dedupe([a, b, c, d, e]), [a, d, e])
+
+    def test_dedupe_keeps_separate_openings(self):
+        # Same company board listing similar titles = separate openings.
+        same_board = [Job("Software Engineer", "Stripe", "Seattle", f"https://stripe.com/jobs/{i}", "Greenhouse")
+                      for i in range(3)]
+        self.assertEqual(len(search_module.dedupe(same_board)), 3)
+        # Different levels are different jobs, even across sites.
+        ii = Job("Software Engineer II", "HP", "Bengaluru", "https://a/2", "LinkedIn")
+        iii = Job("Software Engineer III", "HP", "Bengaluru", "https://b/3", "Indeed")
+        senior = Job("Senior Software Engineer", "HP", "Bengaluru", "https://c/s", "Naukri")
+        plain = Job("Software Engineer", "HP", "Bengaluru", "https://d/p", "Naukri")
+        self.assertEqual(len(search_module.dedupe([ii, iii, senior, plain])), 4)
+
+    def test_age_filter_block_list_new_flags_and_ranking(self):
+        today = date.today()
+        jobs = [
+            Job("Data Analyst", "Acme", "Pune", "https://s/1", "Indeed", (today - timedelta(days=40)).isoformat()),
+            Job("Senior Data Analyst", "Acme", "Pune", "https://s/2", "Indeed", (today - timedelta(days=2)).isoformat()),
+            Job("Data Analyst", "Spammy Staffing", "Pune", "https://s/3", "Indeed", today.isoformat()),
+            Job("Data Analyst", "Globex", "Pune", "https://s/4", "Indeed", None),
+        ]
+        store.block_company("Spammy Staffing Pvt Ltd")  # matches "Spammy Staffing" after normalizing
+        store.mark_seen(["https://s/4"])
+        with mock.patch.object(search_module.boards, "search", return_value=jobs), \
+             mock.patch.object(search_module.ats, "load_watchlist", return_value=[]):
+            result = search_module.search(SearchParams(query="data analyst", max_age_days=30), ["indeed"])
+        store.unblock_company("Spammy Staffing Pvt Ltd")
+
+        self.assertEqual([j["url"] for j in result["jobs"]], ["https://s/2", "https://s/4"])
+        self.assertEqual((result["too_old"], result["hidden_companies"]), (1, 1))
+        self.assertEqual([j["is_new"] for j in result["jobs"]], [True, False])
+        self.assertGreater(result["jobs"][0]["score"], result["jobs"][1]["score"])
 
     def test_failing_source_is_reported_not_raised(self):
         good = [Job("Data Analyst", "Acme", "Pune", "https://a/1", "Indeed", "2026-10-01"),
