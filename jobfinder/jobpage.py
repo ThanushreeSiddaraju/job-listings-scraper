@@ -5,6 +5,7 @@ from datetime import date, datetime
 
 from bs4 import BeautifulSoup
 
+from . import attributes
 from .models import Job
 
 
@@ -61,6 +62,17 @@ def _to_date(value) -> date | None:
             return None
 
 
+def _salary(value) -> str | None:
+    """schema.org baseSalary: {"currency": "USD", "value": {"minValue": .., "maxValue": .., "unitText": "YEAR"}}."""
+    if not isinstance(value, dict):
+        return None
+    amount = value.get("value")
+    if not isinstance(amount, dict):
+        amount = {"value": amount}
+    return attributes.salary(amount.get("minValue") or amount.get("value"), amount.get("maxValue"),
+                             value.get("currency"), amount.get("unitText"))
+
+
 def extract_jobs(html: str, url: str, source: str, today: date | None = None) -> list[Job]:
     """Return the open JobPosting entries on a page; expired ones (validThrough in the past) are dropped."""
     today = today or date.today()
@@ -78,13 +90,21 @@ def extract_jobs(html: str, url: str, source: str, today: date | None = None) ->
             if valid_through and valid_through < today:
                 continue
             posted = _to_date(obj.get("datePosted"))
+            title = BeautifulSoup(str(obj["title"]), "html.parser").get_text(strip=True)
+            location = _location(obj.get("jobLocation"))
+            telecommute = str(obj.get("jobLocationType", "")).upper() == "TELECOMMUTE"
+            mode = attributes.work_mode(None, telecommute, location, title)
             jobs.append(Job(
-                title=BeautifulSoup(str(obj["title"]), "html.parser").get_text(strip=True),
+                title=title,
                 company=_name(obj.get("hiringOrganization")),
-                location=_location(obj.get("jobLocation")),
+                location=location,
                 url=obj.get("url") or url,
                 source=source,
                 date_posted=posted.isoformat() if posted else None,
-                remote=str(obj.get("jobLocationType", "")).upper() == "TELECOMMUTE" or None,
+                remote=mode == "Remote" or None,
+                experience=attributes.experience_level(title),
+                job_type=attributes.job_type(obj.get("employmentType"), title),
+                work_mode=mode,
+                salary=_salary(obj.get("baseSalary")),
             ))
     return jobs

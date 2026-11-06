@@ -10,6 +10,11 @@ class Job:
     source: str
     date_posted: str | None = None  # ISO date, YYYY-MM-DD
     remote: bool | None = None
+    experience: str | None = None  # one of attributes.EXPERIENCE_LEVELS
+    job_type: str | None = None  # one of attributes.JOB_TYPES
+    work_mode: str | None = None  # one of attributes.WORK_MODES
+    salary: str | None = None  # display text, e.g. "$207K–$285K / yr"
+    department: str | None = None
 
     def to_dict(self) -> dict:
         return asdict(self)

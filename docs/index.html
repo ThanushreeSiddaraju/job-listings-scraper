@@ -66,11 +66,18 @@
     td a { color: var(--accent); font-weight: 600; }
     .score { font-variant-numeric: tabular-nums; color: var(--muted); }
     .tag { font-size: 12px; background: var(--chip); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
-    .remote { font-size: 12px; color: var(--ok); margin-left: 6px; }
     .new { font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent);
            border-radius: 4px; padding: 1px 6px; margin-right: 6px; vertical-align: 1px; }
     .hide { border: 0; background: none; color: var(--muted); padding: 0 0 0 6px; font-size: 12px; }
     .hide:hover { color: var(--error); text-decoration: underline; }
+    .filters { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 10px; align-items: center; font-size: 14px; }
+    .filters select { padding: 7px 10px; font-size: 14px; }
+    .filters select.active { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+    .filters label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .filters .link { border: 0; background: none; color: var(--accent); padding: 4px 6px; font-size: 14px; }
+    #shown { color: var(--muted); font-size: 13px; margin-left: auto; }
+    .meta { font-size: 12px; color: var(--muted); font-weight: 400; margin-top: 3px; }
+    .meta .pay { color: var(--ok); font-weight: 600; }
     .empty { padding: 40px 16px; text-align: center; color: var(--muted); }
     footer { color: var(--muted); font-size: 13px; margin-top: 24px; }
   </style>
@@ -118,6 +125,15 @@
     <select id="company-filter" aria-label="Filter by company"><option value="">All companies</option></select>
     <label title="Jobs you haven't seen in an earlier search in this browser"><input type="checkbox" id="only-new"> Only new</label>
     <button id="csv" type="button" disabled>Download CSV</button>
+  </div>
+  <div class="filters" id="facets" aria-label="Filter results">
+    <select data-field="experience" aria-label="Experience level"></select>
+    <select data-field="job_type" aria-label="Job type"></select>
+    <select data-field="work_mode" aria-label="Work mode: remote, hybrid or on-site"></select>
+    <select data-field="department" aria-label="Department"></select>
+    <label title="Only jobs that publish a pay range"><input type="checkbox" id="f-salary"> Salary listed</label>
+    <button type="button" class="link" id="clear-filters" hidden>Clear filters</button>
+    <span id="shown"></span>
   </div>
   <div class="table-wrap">
     <table>
@@ -174,6 +190,62 @@
     return match + focus + recency;
   }
 
+  // ---------- experience, job type, work mode, salary (same rules as jobfinder/attributes.py) ----------
+  const wordsRe = (words, edge = "\\w-") => new RegExp(`(?<![${edge}])(?:${words})(?![${edge}])`);
+  const TITLE_LEVELS = [
+    ["Internship", "intern|internship|apprentice|apprenticeship|co-?op"],
+    ["Director / Executive", "director|vp|svp|evp|vice president|head of|chief|cto|ceo|cfo|coo|cio|ciso|president"],
+    ["Lead / Principal", "lead|principal|staff|architect|distinguished|fellow|iv|v"],
+    ["Senior", "senior|sr|snr|iii"],
+    ["Mid level", "mid|mid-level|intermediate|ii"],
+    ["Entry level", "junior|jr|jnr|entry|entry-level|graduate|grad|fresher|freshers|trainee|associate|i|new grad|early career"],
+  ].map(([level, words]) => [level, wordsRe(words)]);
+  function experienceLevel(title) {
+    const text = String(title || "").toLowerCase().replace(/office of the \w+/g, "");  // a team, not a level
+    return TITLE_LEVELS.find(([, re]) => re.test(text))?.[0] || null;
+  }
+  const TYPE_WORDS = [
+    ["Internship", "intern|internship"], ["Part-time", "part[\\s_-]?time|parttime"],
+    ["Contract", "contract|contractor|freelance|consultant"],
+    ["Temporary", "temporary|temp|short[\\s_-]?term|seasonal|fixed[\\s_-]?term"],
+    ["Full-time", "full[\\s_-]?time|fulltime|permanent|regular"],
+  ].map(([kind, words]) => [kind, wordsRe(words, "\\w")]);
+  const TITLE_TYPES = [
+    ["Internship", "intern|internship"], ["Part-time", "part[\\s-]?time"],
+    ["Contract", "contract role|contractor|freelance|\\(contract\\)|- contract"],
+    ["Temporary", "temporary|seasonal|fixed[\\s-]?term"],
+  ].map(([kind, words]) => [kind, wordsRe(words, "\\w")]);
+  function jobType(raw, title) {
+    const text = String(raw || "").toLowerCase(), t = String(title || "").toLowerCase();
+    return (text && TYPE_WORDS.find(([, re]) => re.test(text))?.[0]) || TITLE_TYPES.find(([, re]) => re.test(t))?.[0] || null;
+  }
+  function workMode(raw, remote, ...texts) {
+    for (const value of [raw, ...texts]) {
+      const text = String(value || "").toLowerCase();
+      if (text.includes("hybrid")) return "Hybrid";
+      if (/remote|work from home|wfh|telecommute|anywhere/.test(text)) return "Remote";
+      if (/on[\s_-]?site|in[\s_-]?office|work from office/.test(text)) return "On-site";
+    }
+    return remote ? "Remote" : null;
+  }
+  const SYMBOLS = { USD: "$", INR: "₹", EUR: "€", GBP: "£", CAD: "CA$", AUD: "A$", SGD: "S$" };
+  const PER = { "1 year": "yr", year: "yr", yearly: "yr", "1 month": "mo", monthly: "mo", "1 week": "wk", "1 day": "day", "1 hour": "hr", hourly: "hr" };
+  const short = (n) => n >= 1e6 ? `${+(n / 1e6).toFixed(1)}M` : n >= 1000 ? `${Math.round(n / 1000)}K` : String(Math.round(n));
+  function salary(min, max, currency, interval) {
+    const lo = min > 0 ? min : null, hi = max > 0 ? max : null;
+    if (!lo && !hi) return null;
+    const code = String(currency || "").toUpperCase(), sym = SYMBOLS[code] ?? (code ? `${code} ` : "");
+    const amount = lo && hi && lo !== hi ? `${sym}${short(lo)}–${sym}${short(hi)}` : `${sym}${short(lo || hi)}`;
+    const per = PER[String(interval || "").toLowerCase()];
+    return per ? `${amount} / ${per}` : amount;
+  }
+  // Fills in the shared fields; isRemote-style flags only count when the board gives no workplace type.
+  function withAttributes(job, { workplace = null, remoteFlag = null, employment = null } = {}) {
+    const mode = workMode(workplace, remoteFlag, job.location, job.title);
+    return { ...job, remote: mode === "Remote", experience: experienceLevel(job.title),
+             job_type: jobType(employment, job.title), work_mode: mode, salary: job.salary || null, department: job.department || null };
+  }
+
   // ---------- company career-page APIs (they allow requests from any website) ----------
   const isoDate = (v) => v == null ? null : typeof v === "number" ? new Date(v).toISOString().slice(0, 10) : String(v).slice(0, 10);
   const titleCase = (s) => s.replace(/[-_]+/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
@@ -181,23 +253,30 @@
   const FETCHERS = {
     async greenhouse(slug, name) {
       const data = await getJSON(`https://boards-api.greenhouse.io/v1/boards/${slug}/jobs`);
-      return (data.jobs || []).map((j) => {
-        const loc = j.location?.name || null;
-        return { title: j.title.trim(), company: j.company_name || name || titleCase(slug), location: loc, url: j.absolute_url,
-                 source: "Greenhouse", date_posted: isoDate(j.first_published || j.updated_at), remote: /remote/i.test(loc || "") };
-      });
+      return (data.jobs || []).map((j) => withAttributes({ title: j.title.trim(), company: j.company_name || name || titleCase(slug),
+        location: j.location?.name || null, url: j.absolute_url, source: "Greenhouse", date_posted: isoDate(j.first_published || j.updated_at) }));
     },
     async lever(slug, name) {
       const data = await getJSON(`https://api.lever.co/v0/postings/${slug}?mode=json`);
-      return data.map((j) => ({ title: j.text.trim(), company: name || titleCase(slug), location: j.categories?.location || null,
-        url: j.hostedUrl, source: "Lever", date_posted: isoDate(j.createdAt), remote: j.workplaceType === "remote" }));
+      return data.map((j) => {
+        const c = j.categories || {}, pay = j.salaryRange || {};
+        return withAttributes({ title: j.text.trim(), company: name || titleCase(slug), location: c.location || null,
+          url: j.hostedUrl, source: "Lever", date_posted: isoDate(j.createdAt), department: c.department || c.team,
+          salary: salary(pay.min, pay.max, pay.currency, pay.interval) },
+          { workplace: j.workplaceType === "unspecified" ? null : j.workplaceType, employment: c.commitment });
+      });
     },
     async ashby(slug, name) {
-      const data = await getJSON(`https://api.ashbyhq.com/posting-api/job-board/${slug}`);
-      return (data.jobs || []).filter((j) => j.isListed !== false).map((j) => ({
-        title: j.title.trim(), company: name || titleCase(slug),
-        location: [j.location, ...(j.secondaryLocations || []).map((s) => s.location)].filter(Boolean).join("; ") || null,
-        url: j.jobUrl, source: "Ashby", date_posted: isoDate(j.publishedAt), remote: Boolean(j.isRemote) }));
+      const data = await getJSON(`https://api.ashbyhq.com/posting-api/job-board/${slug}?includeCompensation=true`);
+      return (data.jobs || []).filter((j) => j.isListed !== false).map((j) => {
+        const pay = (j.compensation?.summaryComponents || []).find((c) => c.compensationType === "Salary") || {};
+        return withAttributes({
+          title: j.title.trim(), company: name || titleCase(slug),
+          location: [j.location, ...(j.secondaryLocations || []).map((s) => s.location)].filter(Boolean).join("; ") || null,
+          url: j.jobUrl, source: "Ashby", date_posted: isoDate(j.publishedAt), department: j.department || j.team,
+          salary: salary(pay.minValue, pay.maxValue, pay.currencyCode, pay.interval) },
+          { workplace: j.workplaceType, remoteFlag: j.isRemote, employment: j.employmentType });
+      });
     },
   };
 
@@ -268,12 +347,66 @@
   let jobs = [];
   let sort = { key: "score", dir: -1 };
 
+  // ---------- result filters (like the side filters on LinkedIn, Indeed and Naukri) ----------
+  const FACETS = {
+    experience: { label: "Experience", order: ["Internship", "Entry level", "Mid level", "Senior", "Lead / Principal", "Director / Executive"] },
+    job_type: { label: "Job type", order: ["Full-time", "Part-time", "Contract", "Internship", "Temporary"] },
+    work_mode: { label: "Work mode", order: ["Remote", "Hybrid", "On-site"] },
+    department: { label: "Department", order: null },  // by number of jobs
+  };
+  const facetSelect = (field) => document.querySelector(`#facets select[data-field="${field}"]`);
+
+  function passesFacets(job, skip) {
+    if (skip !== "salary" && $("f-salary").checked && !job.salary) return false;
+    return Object.keys(FACETS).every((field) => {
+      const wanted = field === skip ? "" : facetSelect(field).value;
+      return !wanted || job[field] === wanted;
+    });
+  }
+
+  // Each dropdown counts the jobs that the *other* filters leave, so a count is what you get by picking it.
+  function renderFacets(base) {
+    for (const [field, { label, order }] of Object.entries(FACETS)) {
+      const select = facetSelect(field), current = select.value;
+      const counts = new Map();
+      base.filter((j) => passesFacets(j, field)).forEach((j) => j[field] && counts.set(j[field], (counts.get(j[field]) || 0) + 1));
+      if (current && !counts.has(current)) counts.set(current, 0);
+      const values = order ? order.filter((v) => counts.has(v))
+                           : [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a) || a.localeCompare(b));
+      select.innerHTML = `<option value="">${label}: any</option>` +
+        values.map((v) => `<option value="${esc(v)}">${esc(v)} (${counts.get(v)})</option>`).join("");
+      select.value = current;
+      select.disabled = !values.length;
+      select.classList.toggle("active", Boolean(current));
+    }
+    const active = Object.keys(FACETS).some((f) => facetSelect(f).value) || $("f-salary").checked;
+    $("clear-filters").hidden = !active;
+    return active;
+  }
+
+  function metaLine(j) {
+    const parts = [j.experience, j.job_type, j.work_mode].filter(Boolean).map(esc);
+    if (j.salary) parts.push(`<span class="pay">${esc(j.salary)}</span>`);
+    return parts.length ? `<div class="meta">${parts.join(" · ")}</div>` : "";
+  }
+
+  document.querySelectorAll("#facets select").forEach((s) => s.addEventListener("change", render));
+  $("f-salary").addEventListener("change", render);
+  $("clear-filters").addEventListener("click", () => {
+    document.querySelectorAll("#facets select").forEach((s) => { s.value = ""; });
+    $("f-salary").checked = false;
+    render();
+  });
+
   function render() {
     const q = $("filter").value.trim().toLowerCase();
     const company = $("company-filter").value;
     const onlyNew = $("only-new").checked;
-    let rows = jobs.filter((j) => (!company || j.company === company) && (!onlyNew || j.is_new) &&
+    const base = jobs.filter((j) => (!company || j.company === company) && (!onlyNew || j.is_new) &&
       (!q || [j.title, j.company, j.location].some((v) => (v || "").toLowerCase().includes(q))));
+    const filtering = renderFacets(base);
+    let rows = base.filter((j) => passesFacets(j));
+    $("shown").textContent = jobs.length ? `Showing ${rows.length} of ${jobs.length}` : "";
     const cmp = (a, b) => typeof a === "number" ? a - b : String(a || "").localeCompare(String(b || ""));
     rows.sort((a, b) => cmp(a[sort.key], b[sort.key]) * sort.dir || cmp(b.date_posted, a.date_posted));
     document.querySelectorAll("th[data-key]").forEach((th) =>
@@ -281,14 +414,14 @@
     $("rows").innerHTML = rows.length ? rows.map((j) => `
       <tr>
         <td class="score">${j.score}</td>
-        <td class="title">${j.is_new ? '<span class="new">NEW</span>' : ""}${esc(j.title)}${j.remote ? '<span class="remote">Remote</span>' : ""}</td>
+        <td class="title">${j.is_new ? '<span class="new">NEW</span>' : ""}${esc(j.title)}${metaLine(j)}</td>
         <td>${esc(j.company)}<button class="hide" data-company="${esc(j.company)}" title="Hide all jobs from this company">Hide</button></td>
         <td class="loc">${esc(j.location || "—")}</td>
         <td class="nowrap">${esc(j.date_posted || "—")}</td>
         <td><span class="tag">${esc(j.source)}</span></td>
         <td><a href="${esc(j.url)}" target="_blank" rel="noopener">Apply ↗</a></td>
       </tr>`).join("")
-      : `<tr><td colspan="7" class="empty">${jobs.length ? "No jobs match this filter." :
+      : `<tr><td colspan="7" class="empty">${jobs.length ? (filtering ? "No jobs match these filters. Try “Clear filters”." : "No jobs match this filter.") :
           "No jobs found. Try a broader keyword, a different place, or “any time”."}</td></tr>`;
   }
 
@@ -399,7 +532,8 @@
   });
 
   $("csv").addEventListener("click", () => {
-    const cols = ["score", "title", "company", "location", "date_posted", "source", "remote", "is_new", "url"];
+    const cols = ["score", "title", "company", "location", "date_posted", "source", "experience", "job_type",
+                  "work_mode", "salary", "department", "is_new", "url"];
     const cell = (v) => `"${String(v ?? "").replace(/"/g, '""')}"`;
     const csv = [cols.join(","), ...jobs.map((j) => cols.map((c) => cell(j[c])).join(","))].join("\n");
     const a = document.createElement("a");

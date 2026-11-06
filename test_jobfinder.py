@@ -4,7 +4,7 @@ import unittest
 from datetime import date, timedelta
 from unittest import mock
 
-from jobfinder import http, store
+from jobfinder import attributes, http, store
 from jobfinder import search as search_module
 from jobfinder.jobpage import extract_jobs
 from jobfinder.matching import location_matches, normalize_company, normalize_title, relevance, title_matches
@@ -50,12 +50,15 @@ GREENHOUSE = {"jobs": [
 ]}
 LEVER = [
     {"text": "Senior Data Analyst", "hostedUrl": "https://jobs.lever.co/acme/1",
-     "categories": {"location": "Bangalore"}, "createdAt": 1792767640768, "workplaceType": "hybrid"},
+     "categories": {"location": "Bangalore", "commitment": "Permanent", "department": "Analytics"},
+     "createdAt": 1792767640768, "workplaceType": "hybrid"},
 ]
 ASHBY = {"jobs": [
     {"title": "Data Analyst", "jobUrl": "https://jobs.ashbyhq.com/acme/1", "location": "Remote",
      "secondaryLocations": [{"location": "London"}], "publishedAt": "2026-09-01T00:00:00Z",
-     "isRemote": True, "isListed": True},
+     "isRemote": True, "isListed": True, "employmentType": "Contract", "department": "Finance",
+     "compensation": {"summaryComponents": [
+         {"compensationType": "Salary", "interval": "1 YEAR", "currencyCode": "USD", "minValue": 90000, "maxValue": 120000}]}},
     {"title": "Data Analyst (unlisted)", "jobUrl": "https://jobs.ashbyhq.com/acme/2", "location": "Remote",
      "isListed": False},
 ]}
@@ -91,6 +94,52 @@ class MatchingTest(unittest.TestCase):
         self.assertTrue(location_matches("Anywhere", ""))
 
 
+class AttributesTest(unittest.TestCase):
+    def test_experience_from_title(self):
+        cases = {
+            "Data Analyst Intern": "Internship", "Summer Internship - Data": "Internship",
+            "Junior Data Analyst": "Entry level", "Graduate Software Engineer": "Entry level",
+            "Software Engineer I": "Entry level", "Software Engineer II": "Mid level",
+            "Sr. Data Analyst": "Senior", "Software Engineer III": "Senior",
+            "Staff Engineer": "Lead / Principal", "Principal Data Scientist": "Lead / Principal",
+            "Senior Director, Analytics": "Director / Executive", "VP of Engineering": "Director / Executive",
+            "Forward Deployed Engineer [Office of the CTO]": None, "Data Analyst": None, "Python 3 Developer": None, "Staffing Coordinator": None,
+        }
+        for title, level in cases.items():
+            self.assertEqual(attributes.experience_level(title), level, title)
+
+    def test_experience_from_board_hints(self):
+        self.assertEqual(attributes.experience_level("Data Analyst", hint="Mid-Senior level"), "Senior")
+        self.assertEqual(attributes.experience_level("Data Analyst", hint="Entry level"), "Entry level")
+        self.assertEqual(attributes.experience_level("Data Analyst", years="2-5 Yrs"), "Mid level")
+        self.assertEqual(attributes.experience_level("Data Analyst", years="0-1 Yrs"), "Entry level")
+        self.assertEqual(attributes.experience_level("Data Analyst Intern", hint="Entry level"), "Internship")
+        self.assertEqual(attributes.experience_level("Senior Analyst", hint="Not Applicable"), "Senior")
+
+    def test_job_type(self):
+        self.assertEqual(attributes.job_type("FullTime"), "Full-time")
+        self.assertEqual(attributes.job_type("Permanent"), "Full-time")
+        self.assertEqual(attributes.job_type(["contract"]), "Contract")
+        self.assertEqual(attributes.job_type("Short Term"), "Temporary")
+        self.assertEqual(attributes.job_type(None, "Data Analyst Intern"), "Internship")
+        self.assertEqual(attributes.job_type(None, "Contract Manager"), None)
+        self.assertEqual(attributes.job_type(float("nan"), "Data Analyst (Contract)"), "Contract")
+
+    def test_work_mode(self):
+        self.assertEqual(attributes.work_mode("Hybrid", True), "Hybrid")
+        self.assertEqual(attributes.work_mode("OnSite"), "On-site")
+        self.assertEqual(attributes.work_mode(None, None, "Remote - India"), "Remote")
+        self.assertEqual(attributes.work_mode("Work from office"), "On-site")
+        self.assertEqual(attributes.work_mode(None, True, "Bengaluru"), "Remote")
+        self.assertEqual(attributes.work_mode(None, None, "Bengaluru"), None)
+
+    def test_salary(self):
+        self.assertEqual(attributes.salary(207000, 285000, "USD", "1 YEAR"), "$207K–$285K / yr")
+        self.assertEqual(attributes.salary(1200000, 1800000, "INR", "yearly"), "₹1.2M–₹1.8M / yr")
+        self.assertEqual(attributes.salary(40, None, "USD", "hourly"), "$40 / hr")
+        self.assertEqual(attributes.salary(float("nan"), None), None)
+
+
 class JobPageTest(unittest.TestCase):
     def test_reads_open_postings_and_drops_expired(self):
         jobs = extract_jobs(JOB_PAGE, "https://acme.example/jobs/1", "Web search", today=date(2026, 11, 2))
@@ -115,6 +164,12 @@ class AtsTest(unittest.TestCase):
         self.assertEqual(len(ab), 1)  # unlisted job skipped
         self.assertEqual(ab[0].location, "Remote; London")
         self.assertTrue(ab[0].remote)
+        self.assertEqual((lv[0].experience, lv[0].job_type, lv[0].work_mode, lv[0].department),
+                         ("Senior", "Full-time", "Hybrid", "Analytics"))
+        self.assertIsNone(lv[0].remote)  # hybrid is not remote
+        self.assertEqual((ab[0].job_type, ab[0].work_mode, ab[0].salary, ab[0].department),
+                         ("Contract", "Remote", "$90K–$120K / yr", "Finance"))
+        self.assertEqual(gh[0].work_mode, None)
 
     def test_search_boards_filters_and_survives_errors(self):
         def fake_get_json(url, params=None):

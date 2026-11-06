@@ -10,6 +10,7 @@ import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
+from .. import attributes
 from ..http import get_json
 from ..matching import location_matches, title_matches
 from ..models import Job, SearchParams
@@ -28,51 +29,76 @@ def _iso(value) -> str | None:
 
 def fetch_greenhouse(slug: str, company: str | None = None) -> list[Job]:
     data = get_json(f"https://boards-api.greenhouse.io/v1/boards/{slug}/jobs")
-    return [
-        Job(
-            title=j["title"].strip(),
+    jobs = []
+    for j in data.get("jobs", []):
+        title, location = j["title"].strip(), (j.get("location") or {}).get("name")
+        mode = attributes.work_mode(None, None, location, title)
+        jobs.append(Job(
+            title=title,
             company=j.get("company_name") or company or slug,
-            location=(j.get("location") or {}).get("name"),
+            location=location,
             url=j["absolute_url"],
             source="Greenhouse",
             date_posted=_iso(j.get("first_published") or j.get("updated_at")),
-            remote="remote" in ((j.get("location") or {}).get("name") or "").lower() or None,
-        )
-        for j in data.get("jobs", [])
-    ]
+            remote=mode == "Remote" or None,
+            experience=attributes.experience_level(title),
+            job_type=attributes.job_type(None, title),
+            work_mode=mode,
+        ))
+    return jobs
 
 
 def fetch_lever(slug: str, company: str | None = None) -> list[Job]:
     data = get_json(f"https://api.lever.co/v0/postings/{slug}", {"mode": "json"})
-    return [
-        Job(
-            title=j["text"].strip(),
+    jobs = []
+    for j in data:
+        title, categories = j["text"].strip(), j.get("categories") or {}
+        workplace = j.get("workplaceType") if j.get("workplaceType") != "unspecified" else None
+        mode = attributes.work_mode(workplace, None, categories.get("location"), title)
+        pay = j.get("salaryRange") or {}
+        jobs.append(Job(
+            title=title,
             company=company or slug.title(),
-            location=(j.get("categories") or {}).get("location"),
+            location=categories.get("location"),
             url=j["hostedUrl"],
             source="Lever",
             date_posted=_iso(j.get("createdAt")),
-            remote=(j.get("workplaceType") == "remote") or None,
-        )
-        for j in data
-    ]
+            remote=mode == "Remote" or None,
+            experience=attributes.experience_level(title),
+            job_type=attributes.job_type(categories.get("commitment"), title),
+            work_mode=mode,
+            salary=attributes.salary(pay.get("min"), pay.get("max"), pay.get("currency"), pay.get("interval")),
+            department=categories.get("department") or categories.get("team"),
+        ))
+    return jobs
 
 
 def fetch_ashby(slug: str, company: str | None = None) -> list[Job]:
-    data = get_json(f"https://api.ashbyhq.com/posting-api/job-board/{slug}")
+    data = get_json(f"https://api.ashbyhq.com/posting-api/job-board/{slug}", {"includeCompensation": "true"})
     jobs = []
     for j in data.get("jobs", []):
         if not j.get("isListed", True):
             continue
         locations = [j.get("location")] + [s.get("location") for s in j.get("secondaryLocations") or []]
+        location = "; ".join(loc for loc in locations if loc) or None
+        title = j["title"].strip()
+        # isRemote is also true for hybrid roles, so workplaceType decides when it's given.
+        mode = attributes.work_mode(j.get("workplaceType"), j.get("isRemote"), location, title)
+        pay = next((c for c in (j.get("compensation") or {}).get("summaryComponents") or []
+                    if c.get("compensationType") == "Salary"), {})
         jobs.append(Job(
-            title=j["title"].strip(),
+            title=title,
             company=company or slug.title(),
-            location="; ".join(loc for loc in locations if loc) or None,
+            location=location,
             url=j["jobUrl"],
             source="Ashby",
             date_posted=_iso(j.get("publishedAt")),
-            remote=bool(j.get("isRemote")) or None,
+            remote=mode == "Remote" or None,
+            experience=attributes.experience_level(title),
+            job_type=attributes.job_type(j.get("employmentType"), title),
+            work_mode=mode,
+            salary=attributes.salary(pay.get("minValue"), pay.get("maxValue"), pay.get("currencyCode"), pay.get("interval")),
+            department=j.get("department") or j.get("team"),
         ))
     return jobs
 

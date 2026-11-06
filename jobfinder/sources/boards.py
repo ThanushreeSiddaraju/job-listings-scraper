@@ -9,6 +9,7 @@ import math
 
 from jobspy import scrape_jobs
 
+from .. import attributes
 from ..models import Job, SearchParams
 
 SITES = {
@@ -84,13 +85,23 @@ def search(site: str, params: SearchParams) -> list[Job]:
         if not title or not url:
             continue
         posted = _clean(row.get("date_posted"))
+        location = _clean(row.get("location"))
+        is_remote = row.get("is_remote")
+        is_remote = bool(is_remote) if is_remote is not None and _clean(is_remote) is not None else None
+        mode = attributes.work_mode(_clean(row.get("work_from_home_type")), is_remote, location, title)
         jobs.append(Job(
             title=title,
             company=_clean(row.get("company")),
-            location=_clean(row.get("location")),
+            location=location,
             url=url,
             source=SITES.get(site, site),
             date_posted=posted[:10] if posted else None,
-            remote=bool(row.get("is_remote")) if row.get("is_remote") is not None else None,
+            remote=True if mode == "Remote" else is_remote,
+            experience=attributes.experience_level(title, _clean(row.get("job_level")), _clean(row.get("experience_range"))),
+            job_type=attributes.job_type(row.get("job_type"), title),
+            work_mode=mode,
+            salary=attributes.salary(row.get("min_amount"), row.get("max_amount"), _clean(row.get("currency")),
+                                     _clean(row.get("interval"))),
+            department=_clean(row.get("job_function")),
         ))
     return jobs

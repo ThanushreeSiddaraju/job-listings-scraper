@@ -4,7 +4,7 @@ Type a role ("python developer", "data analyst") and get matching job links from
 with duplicates removed and direct company links preferred.
 
 **Live version: https://thanushreesiddaraju.github.io/job-listings-scraper/**: searches company career pages
-(Greenhouse, Lever, Ashby) directly from your browser. Those APIs allow requests from any website, so no server is needed;
+(Greenhouse, Lever, Ashby) directly from your browser, with the same experience, job type, work mode, department and salary filters. Those APIs allow requests from any website, so no server is needed;
 the page lives in [`docs/`](docs). Job boards (Indeed, LinkedIn, Naukri, …) block browser requests and need the full app below.
 
 It started as the [roadmap.sh Job Listings Scraper project](https://roadmap.sh/projects/job-listings-scraper),
@@ -43,6 +43,12 @@ Search by keyword, optionally a city and country, then filter, sort and download
 - **Posted within:** skip jobs older than 24 hours / 3 / 7 / 30 days. Jobs without a date are kept.
 - **NEW badge / Only new:** jobs you haven't seen in any earlier search, so repeat searches show what's changed.
 - **Hide company:** hides a company (e.g. a staffing agency) from all future searches; un-hide it from the list above the results.
+- **Result filters:** experience level (internship, entry, mid, senior, lead/principal, director), job type
+  (full-time, part-time, contract, internship, temporary), work mode (remote, hybrid, on-site), department and
+  "salary listed", like the side filters on LinkedIn, Indeed and Naukri. Each option shows how many jobs it would leave.
+  Values come from the source when it gives them (Ashby/Lever workplace and employment type, LinkedIn's job level,
+  Naukri's experience range, Indeed/Ashby pay); otherwise the level and type are read from the title
+  ("Sr.", "Engineer III", "Intern", "(Contract)"). Jobs with no known value only show under "any".
 - **Duplicates:** the same job on two sites is shown once, even when the title is written differently ("Sr. Python Dev" / "Senior Python Developer") or one site only gives a state. Separate openings on one company board, and different levels ("Engineer II" / "III"), are never merged.
 
 ### Caching
