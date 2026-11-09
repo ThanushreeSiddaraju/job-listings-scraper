@@ -89,6 +89,9 @@ class MatchingTest(unittest.TestCase):
 
     def test_location_aliases_and_remote(self):
         self.assertTrue(location_matches("Bangalore, KA", "Bengaluru"))
+        self.assertTrue(location_matches("KA, India", "Bengaluru"))  # Indeed India: state only
+        self.assertFalse(location_matches("Kakinada, AP, India", "Bengaluru"))
+        self.assertFalse(location_matches("TN, India", "Bengaluru"))
         self.assertTrue(location_matches(None, "Pune", remote=True))
         self.assertFalse(location_matches("Mumbai", "Pune"))
         self.assertTrue(location_matches("Anywhere", ""))

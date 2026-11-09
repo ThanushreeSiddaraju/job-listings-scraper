@@ -14,6 +14,14 @@ LOCATION_ALIASES = {
     "sf": "san francisco",
 }
 
+# State codes Indeed India uses instead of city names.
+INDIAN_CITY_STATES = {
+    "bengaluru": "ka", "bangalore": "ka", "mysuru": "ka", "mysore": "ka",
+    "mumbai": "mh", "pune": "mh", "nagpur": "mh", "hyderabad": "ts", "chennai": "tn", "coimbatore": "tn",
+    "delhi": "dl", "new delhi": "dl", "gurugram": "hr", "gurgaon": "hr", "noida": "up", "kolkata": "wb",
+    "ahmedabad": "gj", "kochi": "kl", "trivandrum": "kl", "thiruvananthapuram": "kl", "jaipur": "rj", "chandigarh": "ch",
+}
+
 # Words that carry no meaning in a job search ("jobs for python developer").
 STOP_WORDS = {"job", "jobs", "role", "roles", "position", "positions", "for", "in", "a", "an", "the", "and", "of"}
 
@@ -77,4 +85,8 @@ def location_matches(location: str | None, wanted: str, remote: bool | None = No
     loc = location.lower()
     wanted = wanted.lower().strip()
     candidates = {wanted, LOCATION_ALIASES.get(wanted, wanted)}
-    return any(c in loc for c in candidates)
+    if any(c in loc for c in candidates):
+        return True
+    # Indeed India gives only the state ("KA, India" for a Bengaluru job), so accept the city's state code.
+    state = INDIAN_CITY_STATES.get(wanted)
+    return bool(state) and state in {part.strip() for part in re.split(r"[,;]", loc)}

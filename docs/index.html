@@ -188,11 +188,18 @@
     const wanted = terms(query), have = new Set(terms(title));
     return wanted.length > 0 && wanted.every((w) => have.has(w));
   }
+  const INDIAN_CITY_STATES = { bengaluru: "ka", bangalore: "ka", mysuru: "ka", mysore: "ka", mumbai: "mh", pune: "mh",
+    nagpur: "mh", hyderabad: "ts", chennai: "tn", coimbatore: "tn", delhi: "dl", "new delhi": "dl", gurugram: "hr",
+    gurgaon: "hr", noida: "up", kolkata: "wb", ahmedabad: "gj", kochi: "kl", trivandrum: "kl", thiruvananthapuram: "kl",
+    jaipur: "rj", chandigarh: "ch" };
   function locationMatches(location, wanted, remote) {
     if (!wanted) return true;
     if (!location) return Boolean(remote);
     const loc = location.toLowerCase(), w = wanted.toLowerCase().trim();
-    return [w, LOCATION_ALIASES[w]].filter(Boolean).some((c) => loc.includes(c));
+    if ([w, LOCATION_ALIASES[w]].filter(Boolean).some((c) => loc.includes(c))) return true;
+    // Indeed India gives only the state ("KA, India" for a Bengaluru job), so accept the city's state code.
+    const state = INDIAN_CITY_STATES[w];
+    return Boolean(state) && loc.split(/[,;]/).some((part) => part.trim() === state);
   }
   function relevance(title, query, ageDays) {
     const wanted = terms(query), have = terms(title);

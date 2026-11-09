@@ -2,7 +2,7 @@
   "country": "india",
   "location": "",
   "sites": ["naukri", "indeed", "linkedin", "google"],
-  "results_per_search": 30,
+  "results_per_search": 50,
   "max_age_days": 14,
   "roles": [
     "software engineer",
