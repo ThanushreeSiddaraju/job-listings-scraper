@@ -15,6 +15,7 @@ class Job:
     work_mode: str | None = None  # one of attributes.WORK_MODES
     salary: str | None = None  # display text, e.g. "$207K–$285K / yr"
     department: str | None = None
+    company_url: str | None = None  # the company's own posting, when a job board copied it from there
 
     def to_dict(self) -> dict:
         return asdict(self)

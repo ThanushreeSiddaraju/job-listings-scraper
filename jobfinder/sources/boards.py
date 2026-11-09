@@ -6,6 +6,7 @@ rate-limit requests are reported as errors; we don't route around blocking with 
 
 import logging
 import math
+from urllib.parse import urlsplit
 
 from jobspy import scrape_jobs
 
@@ -81,9 +82,12 @@ def search(site: str, params: SearchParams) -> list[Job]:
     jobs = []
     for row in df.to_dict("records"):
         title = _clean(row.get("title"))
-        url = _clean(row.get("job_url_direct")) or _clean(row.get("job_url"))
+        board_url, direct_url = _clean(row.get("job_url")), _clean(row.get("job_url_direct"))
+        url = board_url or direct_url  # the listing on the job board itself
         if not title or not url:
             continue
+        # Many listings are copied from the company's careers site; keep that link too when it's elsewhere.
+        company_url = direct_url if direct_url and urlsplit(direct_url).netloc != urlsplit(url).netloc else None
         posted = _clean(row.get("date_posted"))
         location = _clean(row.get("location"))
         is_remote = row.get("is_remote")
@@ -103,5 +107,6 @@ def search(site: str, params: SearchParams) -> list[Job]:
             salary=attributes.salary(row.get("min_amount"), row.get("max_amount"), _clean(row.get("currency")),
                                      _clean(row.get("interval"))),
             department=_clean(row.get("job_function")),
+            company_url=company_url,
         ))
     return jobs

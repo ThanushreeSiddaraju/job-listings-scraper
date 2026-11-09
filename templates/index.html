@@ -58,6 +58,8 @@
     th[aria-sort="ascending"]::after { content: " ▲"; } th[aria-sort="descending"]::after { content: " ▼"; }
     tbody tr:hover { background: var(--row-hover); }
     td a { color: var(--accent); font-weight: 600; }
+    td.apply a { display: block; white-space: nowrap; }
+    td.apply a + a { font-size: 13px; font-weight: 500; margin-top: 4px; }
     .tag { font-size: 12px; background: var(--chip); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
     .new { font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent);
            border-radius: 4px; padding: 1px 6px; margin-right: 6px; vertical-align: 1px; }
@@ -239,9 +241,18 @@
         <td class="loc">${esc(j.location || "—")}</td>
         <td class="nowrap">${esc(j.date_posted || "—")}</td>
         <td><span class="tag">${esc(j.source)}</span></td>
-        <td><a href="${esc(j.url)}" target="_blank" rel="noopener">Apply ↗</a></td>
+        <td class="apply">${applyLinks(j)}</td>
       </tr>`).join("")
       : `<tr><td colspan="7" class="empty">${jobs.length ? (filtering ? "No jobs match these filters. Try “Clear filters”." : "No jobs match this filter.") : "No jobs found. Try a broader keyword, an older “posted within”, or turn off exact title match."}</td></tr>`;
+  }
+
+  // Job-board listings link to the board's page, plus the company's own posting when the board copied it from there.
+  const PORTALS = new Set(["LinkedIn", "Indeed", "Naukri", "Google Jobs", "Glassdoor", "ZipRecruiter"]);
+  function applyLinks(j) {
+    const link = (url, text, title) => `<a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(title)}">${text} ↗</a>`;
+    if (!PORTALS.has(j.source)) return link(j.url, "Apply", "Open the job on the company's careers page");
+    return link(j.url, `View on ${esc(j.source)}`, `Open this listing on ${j.source}`) +
+      (j.company_url ? link(j.company_url, "Company site", "Open the same job on the company's own careers site") : "");
   }
 
   function renderBlocked(companies) {

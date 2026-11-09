@@ -185,6 +185,26 @@ class AtsTest(unittest.TestCase):
         self.assertEqual(errors, ["Broken: boom"])
 
 
+class BoardsTest(unittest.TestCase):
+    def test_keeps_portal_link_and_company_link(self):
+        import pandas as pd
+        from jobfinder.sources import boards
+        rows = pd.DataFrame([
+            {"title": "Data Analyst", "company": "nVent", "location": "Bengaluru", "date_posted": "2026-11-08",
+             "job_url": "https://www.naukri.com/job-listings-data-analyst-1",
+             "job_url_direct": "https://nvent.wd5.myworkdayjobs.com/job/R1"},
+            {"title": "Data Analyst", "company": "Acme", "location": "Pune", "date_posted": "2026-11-08",
+             "job_url": "https://www.naukri.com/job-listings-data-analyst-2",
+             "job_url_direct": "https://www.naukri.com/job-listings-data-analyst-2?src=apply"},  # same site
+            {"title": "Data Analyst", "company": "Globex", "location": "Delhi", "date_posted": None,
+             "job_url": "https://www.linkedin.com/jobs/view/3", "job_url_direct": None},
+        ])
+        with mock.patch.object(boards, "scrape_jobs", return_value=rows):
+            jobs = boards.search("naukri", SearchParams(query="data analyst"))
+        self.assertEqual([j.url for j in jobs], list(rows["job_url"]))
+        self.assertEqual([j.company_url for j in jobs], ["https://nvent.wd5.myworkdayjobs.com/job/R1", None, None])
+
+
 class WebSearchTest(unittest.TestCase):
     def test_board_from_url(self):
         self.assertEqual(websearch.board_from_url("https://jobs.lever.co/Acme/123"), {"ats": "lever", "slug": "acme"})
