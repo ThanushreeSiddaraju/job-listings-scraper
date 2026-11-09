@@ -38,6 +38,11 @@
     button:disabled { opacity: .6; cursor: default; }
     .options { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 12px; font-size: 14px; align-items: center; }
     .options label { display: inline-flex; gap: 6px; align-items: center; cursor: pointer; }
+    .boards { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); font-size: 14px; color: var(--muted);
+              display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; }
+    .boards a { color: var(--accent); font-weight: 600; text-decoration: none; border: 1px solid var(--border);
+                border-radius: 999px; padding: 3px 12px; background: var(--bg); }
+    .boards a:hover { border-color: var(--accent); }
     summary { cursor: pointer; font-weight: 600; }
     details p { color: var(--muted); font-size: 14px; margin: 10px 0; }
     .companies { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
@@ -86,7 +91,8 @@
 <main>
   <h1>Job Finder</h1>
   <p class="sub">Live job openings straight from company career pages (Greenhouse, Lever and Ashby), searched in your browser.
-    Job boards like Indeed, LinkedIn and Naukri need the <a href="https://github.com/ThanushreeSiddaraju/job-listings-scraper#run">full app</a>.</p>
+    For job boards like LinkedIn, Naukri and Indeed, use the “Also search on” links, or the
+    <a href="https://github.com/ThanushreeSiddaraju/job-listings-scraper#run">full app</a>.</p>
 
   <form id="search-form">
     <div class="row">
@@ -102,6 +108,7 @@
           <option value="7">7 days</option><option value="30">30 days</option>
         </select></label>
     </div>
+    <div class="boards" id="boards" hidden></div>
   </form>
 
   <details id="company-panel">
@@ -472,6 +479,35 @@
     $("go").disabled = false;
     render();
   }
+
+  // ---------- links to job boards' own search (they block scraping from a web page, but linking is fine) ----------
+  const INDIAN_PLACES = /\b(india|bengaluru|bangalore|mumbai|delhi|new delhi|hyderabad|chennai|pune|kolkata|gurugram|gurgaon|noida|ahmedabad|kochi|jaipur|coimbatore|chandigarh|indore|mysuru|mysore|trivandrum|thiruvananthapuram)\b/i;
+  const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+
+  function boardLinks(query, place, remoteOnly, days) {
+    const where = place || (remoteOnly ? "Remote" : "");
+    const params = (obj) => new URLSearchParams(Object.entries(obj).filter(([, v]) => v !== "" && v != null)).toString();
+    const naukriPath = `${slug(query)}-jobs${place ? `-in-${slug(place)}` : ""}`;
+    const indeedHost = !place || INDIAN_PLACES.test(place) ? "in.indeed.com" : "www.indeed.com";
+    return [
+      ["LinkedIn", `https://www.linkedin.com/jobs/search/?${params({ keywords: query, location: place,
+        f_WT: remoteOnly ? "2" : "", f_TPR: days ? `r${days * 86400}` : "" })}`],
+      ["Naukri", `https://www.naukri.com/${naukriPath}?${params({ k: query, l: place, jobAge: days || "" })}`],
+      ["Indeed", `https://${indeedHost}/jobs?${params({ q: query, l: where, fromage: days || "" })}`],
+      ["Google Jobs", `https://www.google.com/search?${params({ q: `${query} jobs${where ? ` in ${where}` : ""}`, udm: "8" })}`],
+    ];
+  }
+
+  function renderBoardLinks() {
+    const query = $("q").value.trim();
+    $("boards").hidden = !query;
+    if (!query) return;
+    const days = $("days").value ? Number($("days").value) : null;
+    $("boards").innerHTML = "Also search on:" + boardLinks(query, $("location").value.trim(), $("remote").checked, days)
+      .map(([name, url]) => `<a href="${esc(url)}" target="_blank" rel="noopener noreferrer">${esc(name)} ↗</a>`).join("");
+  }
+  ["q", "location"].forEach((id) => $(id).addEventListener("input", renderBoardLinks));
+  ["remote", "days"].forEach((id) => $(id).addEventListener("change", renderBoardLinks));
 
   $("search-form").addEventListener("submit", (e) => search(e).catch((err) => {
     $("status").className = "error"; $("status").textContent = `Search failed: ${err.message}`; $("go").disabled = false;
