@@ -7,3 +7,5 @@ jobs.csv
 jobs-*.csv
 .env
 data/
+# built by the Pages workflow
+docs/data/

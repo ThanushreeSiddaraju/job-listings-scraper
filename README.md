@@ -5,7 +5,13 @@ with duplicates removed and direct company links preferred.
 
 **Live version: https://thanushreesiddaraju.github.io/job-listings-scraper/**: searches company career pages
 (Greenhouse, Lever, Ashby) directly from your browser, with the same experience, job type, work mode, department and salary filters. Those APIs allow requests from any website, so no server is needed;
-the page lives in [`docs/`](docs). Job boards (Indeed, LinkedIn, Naukri, …) block browser requests and need the full app below.
+the page lives in [`docs/`](docs). Job boards (Naukri, Indeed, LinkedIn, Google Jobs) block browser requests, so a
+[GitHub Actions workflow](.github/workflows/pages.yml) scrapes them every 6 hours with [`snapshot.py`](snapshot.py)
+for the roles in [`portal_roles.json`](portal_roles.json) and publishes the results with the site. Portal jobs link to
+the portal's listing, and also to the company's own posting when the portal copied it from there.
+
+To publish this way, the repo's Settings → Pages → Source must be **GitHub Actions**. Run a snapshot locally with
+`python snapshot.py` (writes `docs/data/portal-jobs.json`, which isn't committed).
 
 It started as the [roadmap.sh Job Listings Scraper project](https://roadmap.sh/projects/job-listings-scraper),
 which is still included as a practice scraper (see [Practice scraper](#practice-scraper-roadmapsh)).

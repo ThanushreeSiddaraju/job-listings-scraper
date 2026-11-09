@@ -43,6 +43,7 @@
     .boards a { color: var(--accent); font-weight: 600; text-decoration: none; border: 1px solid var(--border);
                 border-radius: 999px; padding: 3px 12px; background: var(--bg); }
     .boards a:hover { border-color: var(--accent); }
+    .boards[hidden] { display: none; }
     summary { cursor: pointer; font-weight: 600; }
     details p { color: var(--muted); font-size: 14px; margin: 10px 0; }
     .companies { display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 14px; }
@@ -54,6 +55,8 @@
     #status { color: var(--muted); font-size: 14px; min-height: 21px; margin: 4px 0 6px; }
     #status.error { color: var(--error); }
     #failed { font-size: 13px; color: var(--error); margin-bottom: 8px; }
+    #portal-note { font-size: 13px; color: var(--muted); margin-bottom: 8px; }
+    #portal-note span { text-decoration: underline dotted; cursor: help; }
     #blocked { font-size: 13px; color: var(--muted); margin-bottom: 10px; }
     #blocked button { font-size: 12px; padding: 1px 8px; border-radius: 999px; margin: 2px 4px 2px 0; }
 
@@ -69,6 +72,8 @@
     th[aria-sort="ascending"]::after { content: " ▲"; } th[aria-sort="descending"]::after { content: " ▼"; }
     tbody tr:hover { background: var(--row-hover); }
     td a { color: var(--accent); font-weight: 600; }
+    td.apply a { display: block; white-space: nowrap; }
+    td.apply a + a { font-size: 13px; font-weight: 500; margin-top: 4px; }
     .score { font-variant-numeric: tabular-nums; color: var(--muted); }
     .tag { font-size: 12px; background: var(--chip); border-radius: 6px; padding: 2px 8px; white-space: nowrap; }
     .new { font-size: 11px; font-weight: 700; color: var(--accent-text); background: var(--accent);
@@ -90,9 +95,9 @@
 <body>
 <main>
   <h1>Job Finder</h1>
-  <p class="sub">Live job openings straight from company career pages (Greenhouse, Lever and Ashby), searched in your browser.
-    For job boards like LinkedIn, Naukri and Indeed, use the “Also search on” links, or the
-    <a href="https://github.com/ThanushreeSiddaraju/job-listings-scraper#run">full app</a>.</p>
+  <p class="sub">Job openings from company career pages (Greenhouse, Lever and Ashby, searched live in your browser) and from
+    Naukri, Indeed and LinkedIn (collected every few hours). Portal jobs link to the portal, and to the company's own site
+    when the portal copied it from there.</p>
 
   <form id="search-form">
     <div class="row">
@@ -124,6 +129,7 @@
   </details>
 
   <div id="status" role="status"></div>
+  <div id="portal-note"></div>
   <div id="failed"></div>
   <div id="blocked"></div>
 
@@ -426,11 +432,41 @@
         <td class="loc">${esc(j.location || "—")}</td>
         <td class="nowrap">${esc(j.date_posted || "—")}</td>
         <td><span class="tag">${esc(j.source)}</span></td>
-        <td><a href="${esc(j.url)}" target="_blank" rel="noopener">Apply ↗</a></td>
+        <td class="apply">${applyLinks(j)}</td>
       </tr>`).join("")
       : `<tr><td colspan="7" class="empty">${jobs.length ? (filtering ? "No jobs match these filters. Try “Clear filters”." : "No jobs match this filter.") :
           "No jobs found. Try a broader keyword, a different place, or “any time”."}</td></tr>`;
   }
+
+  // Job-portal listings link to the portal's page, plus the company's own posting when the portal copied it from there.
+  const PORTALS = new Set(["LinkedIn", "Indeed", "Naukri", "Google Jobs", "Glassdoor", "ZipRecruiter"]);
+  function applyLinks(j) {
+    const link = (url, text, title) => `<a href="${esc(url)}" target="_blank" rel="noopener" title="${esc(title)}">${text} ↗</a>`;
+    if (!PORTALS.has(j.source)) return link(j.url, "Apply", "Open the job on the company's careers page");
+    return link(j.url, `View on ${esc(j.source)}`, `Open this listing on ${j.source}`) +
+      (j.company_url ? link(j.company_url, "Company site", "Open the same job on the company's own careers site") : "");
+  }
+
+  // ---------- job-portal snapshot (scraped every few hours by GitHub Actions; see snapshot.py) ----------
+  let portal = null;
+  const portalReady = fetch("data/portal-jobs.json").then((r) => r.ok ? r.json() : null)
+    .then((data) => { portal = data; renderPortalNote(); }).catch(() => {});
+
+  function hoursAgo(iso) {
+    const h = Math.round((Date.now() - new Date(iso)) / 3600000);
+    return h < 1 ? "less than an hour ago" : h === 1 ? "1 hour ago" : h < 48 ? `${h} hours ago` : `${Math.round(h / 24)} days ago`;
+  }
+
+  function renderPortalNote() {
+    if (!portal) { $("portal-note").textContent = ""; return; }
+    const sites = Object.values(portal.sites).filter((s) => s.count).map((s) => s.label);
+    $("portal-note").innerHTML = `Job-portal listings (${esc(sites.join(", "))}) were collected ${esc(hoursAgo(portal.generated_at))} ` +
+      `for these roles in India: <span title="${esc(portal.roles.join(", "))}">${esc(portal.roles.slice(0, 6).join(", "))}` +
+      `${portal.roles.length > 6 ? ` and ${portal.roles.length - 6} more` : ""}</span>. Other keywords may find fewer portal jobs.`;
+  }
+
+  const companyKey = (j) => terms(j.title).join(" ") + "|" +
+    String(j.company || "").toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\b(inc|llc|ltd|limited|pvt|private|corp|corporation|co|com)\b/g, "").trim();
 
   function renderBlocked() {
     const hidden = store.get("hiddenCompanies", []);
@@ -454,24 +490,31 @@
     const seen = new Set(store.get("seenJobs", []));
     const found = new Map();
     let tooOld = 0;
-    results.forEach((r) => {
-      if (!r.ok) return;
-      for (const job of r.value) {
-        if (!titleMatches(job.title, query) || !locationMatches(job.location, place, job.remote) || (remoteOnly && !job.remote)) continue;
-        if (hidden.has(job.company) || found.has(job.url)) continue;
-        const age = job.date_posted ? Math.floor((today - new Date(job.date_posted)) / 86400000) : null;
-        if (days != null && age != null && age > days) { tooOld++; continue; }
-        found.set(job.url, { ...job, score: relevance(job.title, query, age), is_new: !seen.has(job.url) });
-      }
-    });
+    const consider = (job) => {
+      if (!titleMatches(job.title, query) || !locationMatches(job.location, place, job.remote) || (remoteOnly && !job.remote)) return false;
+      if (hidden.has(job.company) || found.has(job.url)) return false;
+      const age = job.date_posted ? Math.floor((today - new Date(job.date_posted)) / 86400000) : null;
+      if (days != null && age != null && age > days) { tooOld++; return false; }
+      found.set(job.url, { ...job, score: relevance(job.title, query, age), is_new: !seen.has(job.url) });
+      return true;
+    };
+    results.forEach((r) => r.ok && r.value.forEach(consider));
+    const fromCompanies = found.size;
+
+    // Job-portal listings, skipping ones the company's own careers page already gave us.
+    await portalReady;
+    const companyJobs = new Set([...found.values()].map(companyKey));
+    (portal?.jobs || []).forEach((job) => { if (!companyJobs.has(companyKey(job))) consider(job); });
+    const fromPortals = found.size - fromCompanies;
     jobs = [...found.values()];
     // Remember what was shown, so the next search can flag only new jobs (capped to keep storage small).
     store.set("seenJobs", [...new Set([...jobs.map((j) => j.url), ...seen])].slice(0, 20000));
 
     const secs = ((performance.now() - started) / 1000).toFixed(1);
     const fresh = jobs.filter((j) => j.is_new).length;
-    $("status").textContent = `${jobs.length} jobs (${fresh} new) from ${companies.length - failed.length} companies in ${secs}s` +
-      (tooOld ? ` · ${tooOld} older posts skipped` : "") + ".";
+    $("status").textContent = `${jobs.length} jobs (${fresh} new) in ${secs}s: ` +
+      `${fromCompanies} from ${companies.length - failed.length} company career pages` +
+      (portal ? `, ${fromPortals} from job portals` : "") + (tooOld ? ` · ${tooOld} older posts skipped` : "") + ".";
     $("failed").textContent = failed.length ? `Couldn't load: ${failed.join(", ")}.` : "";
     const names = [...new Set(jobs.map((j) => j.company))].sort((a, b) => a.localeCompare(b));
     $("company-filter").innerHTML = '<option value="">All companies</option>' + names.map((n) => `<option>${esc(n)}</option>`).join("");

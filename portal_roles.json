@@ -1,0 +1,27 @@
+{
+  "country": "india",
+  "location": "",
+  "sites": ["naukri", "indeed", "linkedin", "google"],
+  "results_per_search": 30,
+  "max_age_days": 14,
+  "roles": [
+    "software engineer",
+    "data analyst",
+    "data scientist",
+    "data engineer",
+    "python developer",
+    "java developer",
+    "frontend developer",
+    "full stack developer",
+    "devops engineer",
+    "business analyst",
+    "product manager",
+    "qa engineer",
+    "android developer",
+    "ui ux designer",
+    "machine learning engineer",
+    "hr executive",
+    "digital marketing",
+    "sales executive"
+  ]
+}
